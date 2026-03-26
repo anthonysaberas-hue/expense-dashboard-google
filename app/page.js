@@ -128,7 +128,7 @@ export default function Dashboard() {
   // ── Actions ───────────────────────────────────────────────────
   const toggleTheme = useCallback(() => {
     setThemeState((prev) => {
-      const next = prev === "light" ? "dark" : prev === "dark" ? "system" : "light";
+      const next = prev === "system" ? "dark" : prev === "dark" ? "light" : "system";
       applyTheme(next);
       return next;
     });
