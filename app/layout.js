@@ -1,3 +1,5 @@
+import "./globals.css";
+
 export const metadata = {
   title: "Expense Dashboard",
   description: "Personal expense tracker powered by Google Sheets",
@@ -11,8 +13,14 @@ export default function RootLayout({ children }) {
           href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap"
           rel="stylesheet"
         />
+        {/* FOUC prevention: apply theme before React hydrates */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('theme_preference')||'system';var isDark=t==='dark'||(t==='system'&&window.matchMedia('(prefers-color-scheme:dark)').matches);document.documentElement.setAttribute('data-theme',isDark?'dark':'light');}catch(e){}})();`,
+          }}
+        />
       </head>
-      <body style={{ margin: 0, background: "#FAFAF8" }}>{children}</body>
+      <body>{children}</body>
     </html>
   );
 }
