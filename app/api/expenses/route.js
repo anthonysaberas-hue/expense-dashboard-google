@@ -12,9 +12,22 @@ export async function GET() {
     const resp = await fetch(url, { cache: "no-store" });
     const text = await resp.text();
 
+    if (!resp.ok) {
+      return NextResponse.json(
+        { error: "Google Sheets returned HTTP " + resp.status, details: text.slice(0, 500) },
+        { status: 500 }
+      );
+    }
+
     // Google Sheets returns JSONP-like response, strip the wrapper
-    const jsonStr = text.replace(/^.*google\.visualization\.Query\.setResponse\(/, "").replace(/\);?\s*$/, "");
-    const data = JSON.parse(jsonStr);
+    const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]*)\);?\s*$/);
+    if (!match) {
+      return NextResponse.json(
+        { error: "Unexpected response from Google Sheets (sheet may not be public)", details: text.slice(0, 500) },
+        { status: 500 }
+      );
+    }
+    const data = JSON.parse(match[1]);
 
     const cols = data.table.cols.map((c) => c.label);
     const rows = data.table.rows;
