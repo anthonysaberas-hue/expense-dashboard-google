@@ -1,6 +1,6 @@
 export const metadata = {
   title: "Expense Dashboard",
-  description: "Personal expense tracker powered by Notion + Claude",
+  description: "Personal expense tracker powered by Google Sheets",
 };
 
 export default function RootLayout({ children }) {

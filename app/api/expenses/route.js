@@ -7,7 +7,8 @@ const SHEET_ID = process.env.GOOGLE_SHEET_ID || "1J2fRLD_lk_MaB77VesONXbHKFjMtEM
 
 export async function GET() {
   try {
-    const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json`;
+    const GID = process.env.GOOGLE_SHEET_GID || "1367308403";
+    const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&gid=${GID}`;
     const resp = await fetch(url, { cache: "no-store" });
     const text = await resp.text();
 

@@ -58,7 +58,7 @@ function Spinner() {
         }}
       />
       <span style={{ fontSize: 13, color: "#888" }}>
-        Loading from Notion...
+        Loading from Google Sheets...
       </span>
     </div>
   );
@@ -535,7 +535,7 @@ export default function Dashboard() {
             Expense dashboard
           </h1>
           <p style={{ fontSize: 12, color: "#999", margin: "6px 0 0" }}>
-            Live from Notion
+            Live from Google Sheets
             {lastUpdated &&
               ` · Updated ${new Date(lastUpdated).toLocaleString()}`}
           </p>
