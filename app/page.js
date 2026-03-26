@@ -96,7 +96,7 @@ function StatCard({ label, value, sub, accent }) {
   );
 }
 
-function MonthCompare({ current, previous, currentLabel, previousLabel }) {
+function MonthCompare({ current, previous, previousLabel }) {
   const diff = current - previous;
   const pct =
     previous > 0 ? ((diff / previous) * 100).toFixed(1) : "N/A";
@@ -314,87 +314,140 @@ function DonutChart({ data }) {
 }
 
 function RecentTable({ expenses }) {
+  const [sortKey, setSortKey] = useState("date");
+  const [sortDir, setSortDir] = useState("desc");
+  const [search, setSearch] = useState("");
+  const [filterCat, setFilterCat] = useState("All");
+
+  const categories = ["All", ...Array.from(new Set(expenses.map((e) => e.category))).sort()];
+
+  const handleSort = (key) => {
+    if (sortKey === key) setSortDir(sortDir === "asc" ? "desc" : "asc");
+    else { setSortKey(key); setSortDir(key === "amount" ? "desc" : "asc"); }
+  };
+
+  const filtered = expenses
+    .filter((e) => filterCat === "All" || e.category === filterCat)
+    .filter((e) => {
+      const q = search.toLowerCase();
+      return !q || (e.vendor || "").toLowerCase().includes(q) || (e.name || "").toLowerCase().includes(q) || e.category.toLowerCase().includes(q);
+    })
+    .sort((a, b) => {
+      const av = sortKey === "amount" ? (a.amount || 0) : sortKey === "vendor" ? (a.vendor || a.name || "") : (a.date || "");
+      const bv = sortKey === "amount" ? (b.amount || 0) : sortKey === "vendor" ? (b.vendor || b.name || "") : (b.date || "");
+      if (av < bv) return sortDir === "asc" ? -1 : 1;
+      if (av > bv) return sortDir === "asc" ? 1 : -1;
+      return 0;
+    });
+
+  const cols = [
+    { key: "date", label: "Date" },
+    { key: "vendor", label: "Vendor" },
+    { key: "category", label: "Category" },
+    { key: "amount", label: "Amount" },
+  ];
+
   return (
-    <div style={{ overflowX: "auto" }}>
-      <table
-        style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}
-      >
-        <thead>
-          <tr style={{ borderBottom: "2px solid #e8e6e0" }}>
-            {["Date", "Vendor", "Category", "Amount"].map((h) => (
-              <th
-                key={h}
-                style={{
-                  textAlign: h === "Amount" ? "right" : "left",
-                  padding: "10px 12px",
-                  color: "#999",
-                  fontWeight: 600,
-                  fontSize: 10,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.08em",
-                }}
-              >
-                {h}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {expenses.slice(0, 20).map((e, i) => (
-            <tr
-              key={i}
-              style={{
-                borderBottom: "1px solid #f0f0ec",
-                transition: "background 0.15s",
-              }}
-              onMouseEnter={(ev) =>
-                (ev.currentTarget.style.background = "#FAFAF8")
-              }
-              onMouseLeave={(ev) =>
-                (ev.currentTarget.style.background = "transparent")
-              }
-            >
-              <td style={{ padding: "10px 12px", color: "#888" }}>
-                {e.date}
-              </td>
-              <td
-                style={{
-                  padding: "10px 12px",
-                  color: "#2c2c2a",
-                  fontWeight: 500,
-                }}
-              >
-                {e.vendor || e.name}
-              </td>
-              <td style={{ padding: "10px 12px" }}>
-                <span
+    <div>
+      <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
+        <input
+          type="text"
+          placeholder="Search by name, vendor, or category..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{
+            flex: 1, minWidth: 180, padding: "7px 12px", fontSize: 13,
+            border: "1px solid #e0e0d8", borderRadius: 8, outline: "none",
+            background: "#FAFAF8", color: "#2c2c2a",
+          }}
+        />
+        <select
+          value={filterCat}
+          onChange={(e) => setFilterCat(e.target.value)}
+          style={{
+            padding: "7px 12px", fontSize: 13, border: "1px solid #e0e0d8",
+            borderRadius: 8, background: "#FAFAF8", color: "#2c2c2a", outline: "none",
+          }}
+        >
+          {categories.map((c) => <option key={c}>{c}</option>)}
+        </select>
+        {(search || filterCat !== "All") && (
+          <button
+            onClick={() => { setSearch(""); setFilterCat("All"); }}
+            style={{
+              padding: "7px 12px", fontSize: 12, border: "1px solid #e0e0d8",
+              borderRadius: 8, background: "#fff", color: "#888", cursor: "pointer",
+            }}
+          >
+            Clear
+          </button>
+        )}
+        <span style={{ fontSize: 12, color: "#aaa", marginLeft: "auto" }}>
+          {filtered.length} transaction{filtered.length !== 1 ? "s" : ""}
+        </span>
+      </div>
+
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <thead>
+            <tr style={{ borderBottom: "2px solid #e8e6e0" }}>
+              {cols.map(({ key, label }) => (
+                <th
+                  key={key}
+                  onClick={() => handleSort(key)}
                   style={{
-                    background: getCatColor(e.category) + "15",
-                    color: getCatColor(e.category),
-                    padding: "3px 10px",
-                    borderRadius: 5,
-                    fontSize: 11,
+                    textAlign: key === "amount" ? "right" : "left",
+                    padding: "10px 12px",
+                    color: sortKey === key ? "#2D6A4F" : "#999",
                     fontWeight: 600,
+                    fontSize: 10,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.08em",
+                    cursor: "pointer",
+                    userSelect: "none",
+                    whiteSpace: "nowrap",
                   }}
                 >
-                  {e.category}
-                </span>
-              </td>
-              <td
-                style={{
-                  padding: "10px 12px",
-                  textAlign: "right",
-                  fontWeight: 700,
-                  color: "#2c2c2a",
-                  fontVariantNumeric: "tabular-nums",
-                }}
-              >
-                {formatCurrency(e.amount)}
-              </td>
+                  {label} {sortKey === key ? (sortDir === "asc" ? "↑" : "↓") : "↕"}
+                </th>
+              ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {filtered.length === 0 ? (
+              <tr>
+                <td colSpan={4} style={{ padding: "2rem", textAlign: "center", color: "#aaa", fontSize: 13 }}>
+                  No transactions match your filter.
+                </td>
+              </tr>
+            ) : (
+              filtered.map((e, i) => (
+                <tr
+                  key={i}
+                  style={{ borderBottom: "1px solid #f0f0ec", transition: "background 0.15s" }}
+                  onMouseEnter={(ev) => (ev.currentTarget.style.background = "#FAFAF8")}
+                  onMouseLeave={(ev) => (ev.currentTarget.style.background = "transparent")}
+                >
+                  <td style={{ padding: "10px 12px", color: "#888" }}>{e.date}</td>
+                  <td style={{ padding: "10px 12px", color: "#2c2c2a", fontWeight: 500 }}>{e.vendor || e.name}</td>
+                  <td style={{ padding: "10px 12px" }}>
+                    <span style={{
+                      background: getCatColor(e.category) + "15",
+                      color: getCatColor(e.category),
+                      padding: "3px 10px", borderRadius: 5, fontSize: 11, fontWeight: 600,
+                    }}>
+                      {e.category}
+                    </span>
+                  </td>
+                  <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: "#2c2c2a", fontVariantNumeric: "tabular-nums" }}>
+                    {formatCurrency(e.amount)}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
