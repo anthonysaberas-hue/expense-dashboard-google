@@ -31,7 +31,7 @@
   --border: #2a2d35;
   --border-focus: #34d399;
   --text: #e8e8e2;
-  --text-muted: #666;
+  --text-muted: #888;
   --text-secondary: #aaa;
   --green: #34d399;
   --green-light: rgba(52,211,153,0.12);
@@ -184,7 +184,7 @@ body {
   cursor: pointer;
   transition: all 0.15s;
   white-space: nowrap;
-  min-height: 32px;
+  min-height: 44px;
 }
 .month-pill:hover { border-color: var(--green); color: var(--green); }
 .month-pill.active {
@@ -361,7 +361,7 @@ body {
   color: var(--text-secondary);
   cursor: pointer;
   transition: background 0.15s;
-  min-height: 36px;
+  min-height: 44px;
 }
 .btn-ghost:hover { background: var(--surface-hover); }
 
@@ -473,8 +473,8 @@ body {
   line-height: 1;
   padding: 4px;
   border-radius: 4px;
-  min-width: 28px;
-  min-height: 28px;
+  min-width: 44px;
+  min-height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
