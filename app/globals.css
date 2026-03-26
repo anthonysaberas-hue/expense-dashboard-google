@@ -545,7 +545,7 @@ body {
   white-space: nowrap;
 }
 .tx-table th.active-sort { color: var(--green); }
-.tx-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.tx-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
 .tx-table tr:last-child td { border-bottom: none; }
 .tx-table tbody tr { transition: background 0.1s; }
 .tx-table tbody tr:hover { background: var(--surface-hover); }
