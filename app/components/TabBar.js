@@ -31,19 +31,6 @@ const TABS = [
     ),
   },
   {
-    label: "Transactions",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <line x1="8" y1="6" x2="21" y2="6" />
-        <line x1="8" y1="12" x2="21" y2="12" />
-        <line x1="8" y1="18" x2="21" y2="18" />
-        <line x1="3" y1="6" x2="3.01" y2="6" />
-        <line x1="3" y1="12" x2="3.01" y2="12" />
-        <line x1="3" y1="18" x2="3.01" y2="18" />
-      </svg>
-    ),
-  },
-  {
     label: "Insights",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -70,7 +57,7 @@ export default function TabBar({ activeTab, onTabChange, warningCount }) {
               onClick={() => onTabChange(i)}
             >
               {tab.label}
-              {i === 4 && warningCount > 0 && (
+              {i === 3 && warningCount > 0 && (
                 <span className="tab-badge" aria-label={`${warningCount} warnings`}>
                   {warningCount}
                 </span>
@@ -96,7 +83,7 @@ export default function TabBar({ activeTab, onTabChange, warningCount }) {
             >
               {tab.icon}
               <span>{tab.label}</span>
-              {i === 4 && warningCount > 0 && (
+              {i === 3 && warningCount > 0 && (
                 <span className="tab-badge-mobile" aria-label={`${warningCount} warnings`}>
                   {warningCount}
                 </span>

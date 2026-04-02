@@ -5,7 +5,6 @@ import TabBar from "./components/TabBar";
 import OverviewTab from "./components/OverviewTab";
 import TrendsTab from "./components/TrendsTab";
 import CategoriesTab from "./components/CategoriesTab";
-import TransactionsTab from "./components/TransactionsTab";
 import InsightsTab from "./components/InsightsTab";
 import ErrorBoundary from "./components/ErrorBoundary";
 import DateRangePicker from "./components/DateRangePicker";
@@ -16,7 +15,7 @@ import { safeGet, safeSet } from "./lib/storage";
 import { applyTheme, getTheme } from "./lib/theme";
 import { formatMonthLabel } from "./lib/constants";
 
-const TAB_LABELS = ["Overview", "Trends", "Categories", "Transactions", "Insights"];
+const TAB_LABELS = ["Overview", "Trends", "Categories", "Insights"];
 
 function SkeletonLoader() {
   return (
@@ -134,7 +133,7 @@ export default function Dashboard() {
   useEffect(() => {
     const handleKey = (e) => {
       if (e.target.matches("input, textarea, [contenteditable]")) return;
-      if (e.key >= "1" && e.key <= "5") {
+      if (e.key >= "1" && e.key <= "4") {
         e.preventDefault();
         setActiveTab(Number(e.key) - 1);
       } else if (e.key === "ArrowLeft") {
@@ -145,7 +144,7 @@ export default function Dashboard() {
         e.preventDefault();
         const idx = monthKeys.indexOf(selectedMonth);
         if (idx < monthKeys.length - 1) setSelectedMonth(monthKeys[idx + 1]);
-      } else if (e.key === "/" && activeTab === 3) {
+      } else if (e.key === "/" && activeTab === 0) {
         e.preventDefault();
         transactionsSearchRef.current?.focus();
       }
@@ -235,20 +234,21 @@ export default function Dashboard() {
 
   const renderTab = () => {
     switch (activeTab) {
-      case 0: return <OverviewTab {...tabProps} insights={activeInsights} onTabChange={setActiveTab} />;
+      case 0: return (
+        <OverviewTab
+          {...tabProps}
+          insights={activeInsights}
+          onTabChange={setActiveTab}
+          searchRef={transactionsSearchRef}
+          writeEnabled={writeEnabled}
+          onUpdate={handleUpdateExpense}
+          onAdd={handleAddExpense}
+          onDelete={handleDeleteExpense}
+        />
+      );
       case 1: return <TrendsTab {...tabProps} />;
       case 2: return <CategoriesTab {...tabProps} budgets={budgets} />;
       case 3: return (
-          <TransactionsTab
-            {...tabProps}
-            searchRef={transactionsSearchRef}
-            writeEnabled={writeEnabled}
-            onUpdate={handleUpdateExpense}
-            onAdd={handleAddExpense}
-            onDelete={handleDeleteExpense}
-          />
-        );
-      case 4: return (
         <InsightsTab
           insights={activeInsights}
           budgets={budgets}
