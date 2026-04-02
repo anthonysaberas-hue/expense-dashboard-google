@@ -58,15 +58,14 @@ export async function GET() {
     }));
 
     // Pre-compute netAmount on each expense
-    // net = amount - total money received back (repaid + forgiven amounts)
+    // net = amount - max(shares, repaid) — shows your share, but if someone
+    // overpays (repaid > share), the extra reduces your cost further
     for (const exp of expenses) {
-      const expSplits = normalizedSplits.filter((s) => s.expenseId === exp.id);
+      const expSplits = normalizedSplits.filter((s) => s.expenseId === exp.id && s.status !== "forgiven");
       if (expSplits.length > 0) {
+        const totalShares = expSplits.reduce((s, sp) => s + sp.share, 0);
         const totalRepaid = expSplits.reduce((s, sp) => s + sp.repaid, 0);
-        const totalForgiven = expSplits
-          .filter((s) => s.status === "forgiven")
-          .reduce((s, sp) => s + (sp.share - sp.repaid), 0);
-        exp.netAmount = exp.amount - totalRepaid - totalForgiven;
+        exp.netAmount = exp.amount - Math.max(totalShares, totalRepaid);
       } else {
         exp.netAmount = exp.amount - exp.repaid;
       }
