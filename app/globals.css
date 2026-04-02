@@ -1421,6 +1421,7 @@ body {
 .people-status-partial { background: var(--blue-light); color: var(--blue); }
 .people-status-settled { background: var(--nice-light); color: var(--nice); }
 .people-status-forgiven { background: var(--red-light); color: var(--text-muted); }
+.people-status-overpaid { background: var(--nice-light); color: var(--nice); }
 
 @media (max-width: 639px) {
   .people-card-header { padding: 12px; gap: 8px; }

@@ -106,12 +106,16 @@ export default function PeopleTab({
                   <span style={{ fontWeight: 600, fontSize: 14, color: "var(--text)" }}>{p.person}</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  {isSettled ? (
-                    <span style={{ fontSize: 12, color: "var(--green)", fontWeight: 600 }}>settled ✓</span>
-                  ) : (
+                  {p.balance > 0 ? (
                     <span style={{ fontSize: 15, fontWeight: 700, color: "var(--red)", fontVariantNumeric: "tabular-nums" }}>
                       owes {formatCurrency(p.balance)}
                     </span>
+                  ) : p.balance < 0 ? (
+                    <span style={{ fontSize: 15, fontWeight: 700, color: "var(--green)", fontVariantNumeric: "tabular-nums" }}>
+                      overpaid {formatCurrency(Math.abs(p.balance))}
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: 12, color: "var(--green)", fontWeight: 600 }}>settled ✓</span>
                   )}
                   <span className={`chevron${isExpanded ? " open" : ""}`} aria-hidden="true">▼</span>
                 </div>
@@ -148,15 +152,14 @@ export default function PeopleTab({
                                   type="number"
                                   step="0.01"
                                   min="0"
-                                  max={sp.share}
                                   value={paymentInputs[sp.splitId] ?? sp.repaid}
                                   onChange={(e) => setPaymentInputs((prev) => ({ ...prev, [sp.splitId]: e.target.value }))}
                                   onBlur={() => {
                                     const val = parseFloat(paymentInputs[sp.splitId]);
                                     if (!isNaN(val) && val !== sp.repaid) {
-                                      const capped = Math.min(Math.max(val, 0), sp.share);
-                                      const newStatus = capped >= sp.share ? "settled" : capped > 0 ? "partial" : "pending";
-                                      onRecordPayment?.(sp.splitId, capped, newStatus);
+                                      const amount = Math.max(val, 0);
+                                      const newStatus = amount > sp.share ? "overpaid" : amount >= sp.share ? "settled" : amount > 0 ? "partial" : "pending";
+                                      onRecordPayment?.(sp.splitId, amount, newStatus);
                                     }
                                     setPaymentInputs((prev) => { const n = { ...prev }; delete n[sp.splitId]; return n; });
                                   }}

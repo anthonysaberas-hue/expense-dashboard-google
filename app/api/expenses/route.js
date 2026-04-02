@@ -58,14 +58,16 @@ export async function GET() {
     }));
 
     // Pre-compute netAmount on each expense
+    // net = amount - total money received back (repaid + forgiven amounts)
     for (const exp of expenses) {
-      const expSplits = normalizedSplits.filter((s) => s.expenseId === exp.id && s.status !== "forgiven");
-      const totalSplitShares = expSplits.reduce((s, sp) => s + sp.share, 0);
-      if (totalSplitShares > 0) {
-        // Your share = amount - what others owe (active splits)
-        exp.netAmount = exp.amount - totalSplitShares;
+      const expSplits = normalizedSplits.filter((s) => s.expenseId === exp.id);
+      if (expSplits.length > 0) {
+        const totalRepaid = expSplits.reduce((s, sp) => s + sp.repaid, 0);
+        const totalForgiven = expSplits
+          .filter((s) => s.status === "forgiven")
+          .reduce((s, sp) => s + (sp.share - sp.repaid), 0);
+        exp.netAmount = exp.amount - totalRepaid - totalForgiven;
       } else {
-        // Fallback: use repaid column
         exp.netAmount = exp.amount - exp.repaid;
       }
     }

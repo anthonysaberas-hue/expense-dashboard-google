@@ -98,13 +98,17 @@ export default function Dashboard() {
     }
   }, [selectedMonth]);
 
-  // Filter by date range
+  // Filter by date range — cross-month ranges filter from ALL expenses
   const monthData = useMemo(() => {
     if (!dateRange.start || !dateRange.end) return rawMonthData;
     const startStr = `${dateRange.start.getFullYear()}-${String(dateRange.start.getMonth() + 1).padStart(2, "0")}-${String(dateRange.start.getDate()).padStart(2, "0")}`;
     const endStr = `${dateRange.end.getFullYear()}-${String(dateRange.end.getMonth() + 1).padStart(2, "0")}-${String(dateRange.end.getDate()).padStart(2, "0")}`;
-    return rawMonthData.filter((e) => e.date >= startStr && e.date <= endStr);
-  }, [rawMonthData, dateRange]);
+    const startMonth = startStr.substring(0, 7);
+    const endMonth = endStr.substring(0, 7);
+    // If range spans multiple months, filter from all expenses
+    const source = startMonth !== endMonth ? expenses : rawMonthData;
+    return source.filter((e) => e.date >= startStr && e.date <= endStr);
+  }, [rawMonthData, expenses, dateRange]);
 
   // Previous month data for TopCategories
   const prevMonthIdx = monthKeys.indexOf(selectedMonth);
