@@ -410,9 +410,12 @@ export default function OverviewTab({
         </div>
       </div>
 
-      {/* ── Full Transactions Table + Summary ── */}
-      <div className="transactions-layout">
-        <div className="card" style={{ flex: 1, minWidth: 0 }}>
+      {/* ── Summary ── */}
+      <SummaryPanel monthData={monthData} />
+
+      {/* ── Full Transactions Table ── */}
+      <div>
+        <div className="card">
           <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
             <input
               id="tx-search"
@@ -483,7 +486,17 @@ export default function OverviewTab({
                         <EditableCell value={e.date} field="date" type="date" onSave={(f, v) => handleCellSave(e, f, v)} disabled={!writeEnabled} />
                       </td>
                       <td style={{ textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
-                        <EditableCell value={e.amount} field="amount" type="number" onSave={(f, v) => handleCellSave(e, f, v)} disabled={!writeEnabled} />
+                        {(() => {
+                          const hasSplits = splits.some((s) => s.expenseId === e.id && s.status !== "forgiven");
+                          return hasSplits ? (
+                            <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+                              <span style={{ textDecoration: "line-through", opacity: 0.4, fontSize: 10 }}>{formatCurrency(e.amount)}</span>
+                              <span style={{ color: "var(--green)" }}>{formatCurrency(e.netAmount ?? e.amount)}</span>
+                            </span>
+                          ) : (
+                            <EditableCell value={e.amount} field="amount" type="number" onSave={(f, v) => handleCellSave(e, f, v)} disabled={!writeEnabled} />
+                          );
+                        })()}
                       </td>
                       <td>
                         <span className="cat-badge" style={{ background: getCatColor(e.category) + "18", color: getCatColor(e.category) }}>
@@ -519,8 +532,6 @@ export default function OverviewTab({
             </table>
           </div>
         </div>
-
-        <SummaryPanel monthData={monthData} />
 
         {showAddModal && (
           <AddExpenseModal

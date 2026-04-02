@@ -17,38 +17,32 @@ export default function SummaryPanel({ monthData = [] }) {
   if (!stats) return null;
 
   return (
-    <div className="card summary-panel">
-      <p className="section-label" style={{ margin: "0 0 14px" }}>Summary</p>
-      <div className="summary-row">
-        <span className="summary-label">Total transactions</span>
-        <span className="summary-value">{stats.count}</span>
+    <div className="summary-bar" style={{ marginBottom: 16 }}>
+      <div className="summary-bar-item">
+        <span className="summary-bar-label">Transactions</span>
+        <span className="summary-bar-value">{stats.count}</span>
       </div>
-      <div className="summary-row">
-        <span className="summary-label">Total amount</span>
-        <span className="summary-value">{formatCurrency(stats.total)}</span>
-      </div>
-      <div className="summary-row">
-        <span className="summary-label">Largest transaction</span>
-        <span className="summary-value">{formatCurrency(stats.largest)}</span>
-      </div>
-      <div className="summary-row">
-        <span className="summary-label">Average transaction</span>
-        <span className="summary-value">{formatCurrency(stats.avg)}</span>
-      </div>
-      <div className="summary-divider" />
-      <div className="summary-row">
-        <span className="summary-label">Gross spending</span>
-        <span className="summary-value">{formatCurrency(stats.grossTotal)}</span>
+      <div className="summary-bar-item">
+        <span className="summary-bar-label">Gross</span>
+        <span className="summary-bar-value">{formatCurrency(stats.grossTotal)}</span>
       </div>
       {stats.totalRepaid > 0 && (
-        <div className="summary-row">
-          <span className="summary-label">Repaid by others</span>
-          <span className="summary-value" style={{ color: "var(--green)" }}>-{formatCurrency(stats.totalRepaid)}</span>
+        <div className="summary-bar-item">
+          <span className="summary-bar-label">Repaid</span>
+          <span className="summary-bar-value" style={{ color: "var(--green)" }}>-{formatCurrency(stats.totalRepaid)}</span>
         </div>
       )}
-      <div className="summary-row">
-        <span className="summary-label">Net spending</span>
-        <span className="summary-value-big">{formatCurrency(stats.total)}</span>
+      <div className="summary-bar-item summary-bar-highlight">
+        <span className="summary-bar-label">Net Spending</span>
+        <span className="summary-bar-value">{formatCurrency(stats.total)}</span>
+      </div>
+      <div className="summary-bar-item">
+        <span className="summary-bar-label">Largest</span>
+        <span className="summary-bar-value">{formatCurrency(stats.largest)}</span>
+      </div>
+      <div className="summary-bar-item">
+        <span className="summary-bar-label">Average</span>
+        <span className="summary-bar-value">{formatCurrency(stats.avg)}</span>
       </div>
     </div>
   );

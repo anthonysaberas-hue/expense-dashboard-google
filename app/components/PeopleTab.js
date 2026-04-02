@@ -121,7 +121,8 @@ export default function PeopleTab({
               {isExpanded && (
                 <div style={{ borderTop: "1px solid var(--border)", padding: "14px 16px" }}>
                   {/* Split history table */}
-                  <table className="tx-table" style={{ fontSize: 12, marginBottom: 12 }}>
+                  <div style={{ overflowX: "auto" }}>
+                  <table className="tx-table" style={{ fontSize: 12, marginBottom: 12, minWidth: 500 }}>
                     <thead>
                       <tr>
                         <th style={{ textAlign: "left" }}>Date</th>
@@ -201,9 +202,10 @@ export default function PeopleTab({
                       })}
                     </tbody>
                   </table>
+                  </div>
 
                   {/* Summary */}
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--text-muted)", borderTop: "1px solid var(--border)", paddingTop: 8 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--text-muted)", borderTop: "1px solid var(--border)", paddingTop: 8, flexWrap: "wrap", gap: 4 }}>
                     <span>Total shared: {formatCurrency(p.totalShare)}</span>
                     <span>Repaid: {formatCurrency(p.totalRepaid)}</span>
                     {p.totalForgiven > 0 && <span>Forgiven: {formatCurrency(p.totalForgiven)}</span>}
