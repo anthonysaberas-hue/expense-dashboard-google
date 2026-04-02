@@ -189,6 +189,7 @@ export default function OverviewTab({
   }, [searchRef]);
 
   const categories = ["All", ...Array.from(new Set(monthData.map((e) => e.category))).sort()];
+  const allCategories = useMemo(() => Array.from(new Set(expenses.map((e) => e.category).filter(Boolean))).sort(), [expenses]);
 
   const handleSort = (key) => {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -226,10 +227,10 @@ export default function OverviewTab({
 
   const txCols = [
     ...(writeEnabled ? [{ key: "_delete", label: "" }] : []),
-    { key: "date", label: "Date" },
     { key: "vendor", label: "Vendor" },
-    { key: "category", label: "Category" },
+    { key: "date", label: "Date" },
     { key: "amount", label: "Amount" },
+    { key: "category", label: "Category" },
     { key: "repaid", label: "Repaid" },
     { key: "notes", label: "Notes" },
   ];
@@ -359,19 +360,19 @@ export default function OverviewTab({
                           <button onClick={() => handleDelete(e)} className="delete-row-btn" aria-label={`Delete ${e.vendor || e.name}`} title="Delete">×</button>
                         </td>
                       )}
+                      <td style={{ fontWeight: 500 }}>
+                        <EditableCell value={e.vendor || e.name} field="vendor" onSave={(f, v) => handleCellSave(e, f, v)} disabled={!writeEnabled} />
+                      </td>
                       <td style={{ color: "var(--text-muted)" }}>
                         <EditableCell value={e.date} field="date" type="date" onSave={(f, v) => handleCellSave(e, f, v)} disabled={!writeEnabled} />
                       </td>
-                      <td style={{ fontWeight: 500 }}>
-                        <EditableCell value={e.vendor || e.name} field="vendor" onSave={(f, v) => handleCellSave(e, f, v)} disabled={!writeEnabled} />
+                      <td style={{ textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                        <EditableCell value={e.amount} field="amount" type="number" onSave={(f, v) => handleCellSave(e, f, v)} disabled={!writeEnabled} />
                       </td>
                       <td>
                         <span className="cat-badge" style={{ background: getCatColor(e.category) + "18", color: getCatColor(e.category) }}>
                           <EditableCell value={e.category} field="category" onSave={(f, v) => handleCellSave(e, f, v)} disabled={!writeEnabled} />
                         </span>
-                      </td>
-                      <td style={{ textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
-                        <EditableCell value={e.amount} field="amount" type="number" onSave={(f, v) => handleCellSave(e, f, v)} disabled={!writeEnabled} />
                       </td>
                       <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: e.repaid > 0 ? "var(--green)" : "var(--text-muted)" }}>
                         <EditableCell value={e.repaid || 0} field="repaid" type="number" onSave={(f, v) => handleCellSave(e, f, v)} disabled={!writeEnabled} />
@@ -391,7 +392,7 @@ export default function OverviewTab({
 
         {showAddModal && (
           <AddExpenseModal
-            categories={categories.filter((c) => c !== "All")}
+            categories={allCategories}
             onAdd={(data) => onAdd?.(data)}
             onClose={() => setShowAddModal(false)}
           />
