@@ -9,6 +9,7 @@ import {
   appendRow,
   deleteRow,
   readAllSplits,
+  deleteSplit,
   isWriteConfigured,
 } from "../../lib/sheets";
 
@@ -205,6 +206,15 @@ export async function DELETE(request) {
     if (!id) {
       return NextResponse.json({ error: "Missing id" }, { status: 400 });
     }
+
+    // Delete associated splits first (avoid orphans)
+    try {
+      const splits = await readAllSplits();
+      const orphans = splits.filter((s) => s.ExpenseID === id);
+      for (const s of orphans) {
+        await deleteSplit(s.SplitID);
+      }
+    } catch { /* Splits tab may not exist */ }
 
     await deleteRow(id);
 
