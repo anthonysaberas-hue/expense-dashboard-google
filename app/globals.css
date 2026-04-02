@@ -1070,12 +1070,13 @@ body {
 .editable-cell {
   cursor: pointer;
   border-bottom: 1px dashed var(--border);
-  padding-bottom: 1px;
+  padding: 4px 2px;
   transition: border-color 0.15s, color 0.15s;
   position: relative;
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  min-height: 28px;
 }
 .editable-cell:hover { border-color: var(--green); color: var(--green); }
 .editable-cell-disabled { cursor: default; }
@@ -1236,8 +1237,8 @@ body {
   padding: 4px;
   border-radius: 4px;
   transition: color 0.15s, background 0.15s;
-  min-width: 32px;
-  min-height: 32px;
+  min-width: 44px;
+  min-height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1359,12 +1360,13 @@ body {
   align-items: center;
   gap: 10px;
   margin-bottom: 2px;
-  padding: 5px 4px;
-  border-radius: 4px;
+  padding: 10px 8px;
+  border-radius: 6px;
   cursor: pointer;
   transition: background 0.1s;
+  min-height: 44px;
 }
-.cat-bar-row:hover { background: var(--surface-hover); }
+.cat-bar-row:hover { background: var(--surface-hover); cursor: pointer; }
 .cat-bar-open { background: var(--surface-hover); }
 .cat-bar-detail {
   padding: 12px 16px;
@@ -1387,12 +1389,15 @@ body {
   background: none;
   border: 1px solid var(--border);
   border-radius: 4px;
-  padding: 2px 6px;
+  padding: 4px 8px;
   cursor: pointer;
   font-size: 12px;
   transition: all 0.15s;
-  min-width: 36px;
-  min-height: 28px;
+  min-width: 44px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .split-btn:hover { background: var(--surface-hover); border-color: var(--green); }
 

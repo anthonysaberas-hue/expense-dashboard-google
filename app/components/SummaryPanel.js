@@ -28,7 +28,7 @@ export default function SummaryPanel({ monthData = [] }) {
       </div>
       {stats.deductions > 0 && (
         <div className="summary-bar-item">
-          <span className="summary-bar-label">Splits</span>
+          <span className="summary-bar-label">Shared</span>
           <span className="summary-bar-value" style={{ color: "var(--green)" }}>-{formatCurrency(stats.deductions)}</span>
         </div>
       )}
