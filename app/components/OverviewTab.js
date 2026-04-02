@@ -337,7 +337,7 @@ export default function OverviewTab({
     { key: "date", label: "Date" },
     { key: "amount", label: "Amount" },
     { key: "category", label: "Category" },
-    { key: "repaid", label: "Repaid" },
+    { key: "repaid", label: "Settled" },
     { key: "notes", label: "Notes" },
     ...(writeEnabled ? [{ key: "_split", label: "" }] : []),
   ];
@@ -486,16 +486,14 @@ export default function OverviewTab({
                         <EditableCell value={e.date} field="date" type="date" onSave={(f, v) => handleCellSave(e, f, v)} disabled={!writeEnabled} />
                       </td>
                       <td style={{ textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                        <EditableCell value={e.amount} field="amount" type="number" onSave={(f, v) => handleCellSave(e, f, v)} disabled={!writeEnabled} />
                         {(() => {
                           const hasSplits = splits.some((s) => s.expenseId === e.id && s.status !== "forgiven");
                           return hasSplits ? (
-                            <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
-                              <span style={{ textDecoration: "line-through", opacity: 0.4, fontSize: 10 }}>{formatCurrency(e.amount)}</span>
-                              <span style={{ color: "var(--green)" }}>{formatCurrency(e.netAmount ?? e.amount)}</span>
+                            <span style={{ fontSize: 10, color: "var(--green)", display: "block", textAlign: "right" }}>
+                              net {formatCurrency(e.netAmount ?? e.amount)}
                             </span>
-                          ) : (
-                            <EditableCell value={e.amount} field="amount" type="number" onSave={(f, v) => handleCellSave(e, f, v)} disabled={!writeEnabled} />
-                          );
+                          ) : null;
                         })()}
                       </td>
                       <td>
@@ -503,8 +501,21 @@ export default function OverviewTab({
                           <EditableCell value={e.category} field="category" onSave={(f, v) => handleCellSave(e, f, v)} disabled={!writeEnabled} />
                         </span>
                       </td>
-                      <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: e.repaid > 0 ? "var(--green)" : "var(--text-muted)" }}>
-                        <EditableCell value={e.repaid || 0} field="repaid" type="number" onSave={(f, v) => handleCellSave(e, f, v)} disabled={!writeEnabled} />
+                      <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                        {(() => {
+                          const expSplits = splits.filter((s) => s.expenseId === e.id);
+                          const totalRepaid = expSplits.reduce((s, sp) => s + sp.repaid, 0);
+                          const totalForgiven = expSplits.filter((s) => s.status === "forgiven").reduce((s, sp) => s + (sp.share - sp.repaid), 0);
+                          const total = totalRepaid + totalForgiven;
+                          if (total > 0 || expSplits.length > 0) {
+                            return (
+                              <span style={{ color: "var(--green)", fontWeight: 600 }}>
+                                {formatCurrency(total)}
+                              </span>
+                            );
+                          }
+                          return <span style={{ color: "var(--text-muted)" }}>—</span>;
+                        })()}
                       </td>
                       <td style={{ fontSize: 12, color: "var(--text-muted)", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis" }}>
                         <EditableCell value={e.notes} field="notes" onSave={(f, v) => handleCellSave(e, f, v)} disabled={!writeEnabled} />
