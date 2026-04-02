@@ -8,6 +8,7 @@ import {
   updateRow,
   appendRow,
   deleteRow,
+  readAllSplits,
   isWriteConfigured,
 } from "../../lib/sheets";
 
@@ -43,9 +44,36 @@ export async function GET() {
     const { data } = await readAllRows();
     const expenses = data.filter((r) => r.Name || r.Vendor).map(normalize);
 
+    // Read splits and attach to expenses
+    let splits = [];
+    try { splits = await readAllSplits(); } catch { /* Splits tab may not exist yet */ }
+
+    const normalizedSplits = splits.map((s) => ({
+      splitId: s.SplitID,
+      expenseId: s.ExpenseID,
+      person: s.Person || "",
+      share: parseFloat(s.Share) || 0,
+      repaid: parseFloat(s.Repaid) || 0,
+      status: s.Status || "pending",
+    }));
+
+    // Pre-compute netAmount on each expense
+    for (const exp of expenses) {
+      const expSplits = normalizedSplits.filter((s) => s.expenseId === exp.id && s.status !== "forgiven");
+      const totalSplitShares = expSplits.reduce((s, sp) => s + sp.share, 0);
+      if (totalSplitShares > 0) {
+        // Your share = amount - what others owe (active splits)
+        exp.netAmount = exp.amount - totalSplitShares;
+      } else {
+        // Fallback: use repaid column
+        exp.netAmount = exp.amount - exp.repaid;
+      }
+    }
+
     return NextResponse.json(
       {
         expenses,
+        splits: normalizedSplits,
         count: expenses.length,
         lastUpdated: new Date().toISOString(),
         writeEnabled: isWriteConfigured(),

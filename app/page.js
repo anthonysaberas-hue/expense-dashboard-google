@@ -6,6 +6,7 @@ import OverviewTab from "./components/OverviewTab";
 import TrendsTab from "./components/TrendsTab";
 import CategoriesTab from "./components/CategoriesTab";
 import InsightsTab from "./components/InsightsTab";
+import PeopleTab from "./components/PeopleTab";
 import ErrorBoundary from "./components/ErrorBoundary";
 import DateRangePicker from "./components/DateRangePicker";
 import TopCategories from "./components/TopCategories";
@@ -15,7 +16,7 @@ import { safeGet, safeSet } from "./lib/storage";
 import { applyTheme, getTheme } from "./lib/theme";
 import { formatMonthLabel } from "./lib/constants";
 
-const TAB_LABELS = ["Overview", "Trends", "Categories", "Insights"];
+const TAB_LABELS = ["Overview", "Trends", "Categories", "People", "Insights"];
 
 function SkeletonLoader() {
   return (
@@ -39,6 +40,7 @@ export default function Dashboard() {
   const [selectedMonth, setSelectedMonth] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [writeEnabled, setWriteEnabled] = useState(false);
+  const [splits, setSplits] = useState([]);
   const [activeTab, setActiveTab] = useState(0);
   const [budgets, setBudgets] = useState(() => getBudgets());
   const [theme, setThemeState] = useState(() => getTheme());
@@ -55,6 +57,7 @@ export default function Dashboard() {
       if (!resp.ok) throw new Error(`API returned ${resp.status}`);
       const data = await resp.json();
       setExpenses(data.expenses || []);
+      setSplits(data.splits || []);
       setLastUpdated(data.lastUpdated);
       setWriteEnabled(!!data.writeEnabled);
       const months = [...new Set(
@@ -133,7 +136,7 @@ export default function Dashboard() {
   useEffect(() => {
     const handleKey = (e) => {
       if (e.target.matches("input, textarea, [contenteditable]")) return;
-      if (e.key >= "1" && e.key <= "4") {
+      if (e.key >= "1" && e.key <= "5") {
         e.preventDefault();
         setActiveTab(Number(e.key) - 1);
       } else if (e.key === "ArrowLeft") {
@@ -229,6 +232,46 @@ export default function Dashboard() {
     await fetchExpenses();
   }, [fetchExpenses]);
 
+  // ── Split operations ─────────────────────────────────────
+  const handleSplitExpense = useCallback(async (expenseId, person, share) => {
+    const res = await fetch("/api/splits", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ expenseId, person, share }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || "Split failed");
+    }
+    await fetchExpenses();
+  }, [fetchExpenses]);
+
+  const handleRecordPayment = useCallback(async (splitId, repaid, status) => {
+    const res = await fetch("/api/splits", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ splitId, repaid, status }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || "Payment failed");
+    }
+    await fetchExpenses();
+  }, [fetchExpenses]);
+
+  const handleForgive = useCallback(async (splitId, forgiveAmount, person, expenseRef, currentRepaid) => {
+    const res = await fetch("/api/splits", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ splitId, action: "forgive", forgiveAmount, person, expenseRef, currentRepaid }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || "Forgive failed");
+    }
+    await fetchExpenses();
+  }, [fetchExpenses]);
+
   // ── Tab rendering ─────────────────────────────────────────────
   const tabProps = { monthData, byMonth, monthKeys, selectedMonth, expenses };
 
@@ -244,11 +287,22 @@ export default function Dashboard() {
           onUpdate={handleUpdateExpense}
           onAdd={handleAddExpense}
           onDelete={handleDeleteExpense}
+          splits={splits}
+          onSplit={handleSplitExpense}
         />
       );
       case 1: return <TrendsTab {...tabProps} />;
       case 2: return <CategoriesTab {...tabProps} budgets={budgets} />;
       case 3: return (
+        <PeopleTab
+          expenses={expenses}
+          splits={splits}
+          onRecordPayment={handleRecordPayment}
+          onForgive={handleForgive}
+          writeEnabled={writeEnabled}
+        />
+      );
+      case 4: return (
         <InsightsTab
           insights={activeInsights}
           budgets={budgets}

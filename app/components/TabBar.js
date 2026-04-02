@@ -31,6 +31,17 @@ const TABS = [
     ),
   },
   {
+    label: "People",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+        <circle cx="9" cy="7" r="4" />
+        <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+      </svg>
+    ),
+  },
+  {
     label: "Insights",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -57,7 +68,7 @@ export default function TabBar({ activeTab, onTabChange, warningCount }) {
               onClick={() => onTabChange(i)}
             >
               {tab.label}
-              {i === 3 && warningCount > 0 && (
+              {i === 4 && warningCount > 0 && (
                 <span className="tab-badge" aria-label={`${warningCount} warnings`}>
                   {warningCount}
                 </span>
@@ -83,7 +94,7 @@ export default function TabBar({ activeTab, onTabChange, warningCount }) {
             >
               {tab.icon}
               <span>{tab.label}</span>
-              {i === 3 && warningCount > 0 && (
+              {i === 4 && warningCount > 0 && (
                 <span className="tab-badge-mobile" aria-label={`${warningCount} warnings`}>
                   {warningCount}
                 </span>

@@ -3,6 +3,7 @@ import { useMemo, useState, useCallback, useEffect } from "react";
 import { getCatColor, formatCurrency, formatMonthLabel, MONTHS, getNetAmount } from "../lib/constants";
 import EditableCell from "./EditableCell";
 import AddExpenseModal from "./AddExpenseModal";
+import SplitModal from "./SplitModal";
 import UndoToast from "./UndoToast";
 import SummaryPanel from "./SummaryPanel";
 import EmptyState from "./EmptyState";
@@ -134,6 +135,8 @@ export default function OverviewTab({
   onAdd,
   onDelete,
   searchRef,
+  splits = [],
+  onSplit,
 }) {
   const total = useMemo(() => monthData.reduce((s, e) => s + getNetAmount(e), 0), [monthData]);
   const currentIdx = monthKeys.indexOf(selectedMonth);
@@ -180,6 +183,7 @@ export default function OverviewTab({
   const [search, setSearch] = useState("");
   const [filterCat, setFilterCat] = useState("All");
   const [showAddModal, setShowAddModal] = useState(false);
+  const [splitExpense, setSplitExpense] = useState(null);
   const [undoAction, setUndoAction] = useState(null);
 
   useEffect(() => {
@@ -233,6 +237,7 @@ export default function OverviewTab({
     { key: "category", label: "Category" },
     { key: "repaid", label: "Repaid" },
     { key: "notes", label: "Notes" },
+    ...(writeEnabled ? [{ key: "_split", label: "" }] : []),
   ];
 
   if (monthData.length === 0) {
@@ -256,7 +261,7 @@ export default function OverviewTab({
             <div style={{ fontSize: 13, marginTop: 2 }}>{topWarning.body}</div>
           </div>
           <button
-            onClick={() => onTabChange(3)}
+            onClick={() => onTabChange(4)}
             style={{ marginLeft: "auto", flexShrink: 0, background: "none", border: "1px solid var(--red)", borderRadius: "var(--radius-sm)", color: "var(--red)", padding: "4px 10px", fontSize: 12, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}
             aria-label="View all insights"
           >
@@ -380,6 +385,22 @@ export default function OverviewTab({
                       <td style={{ fontSize: 12, color: "var(--text-muted)", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis" }}>
                         <EditableCell value={e.notes} field="notes" onSave={(f, v) => handleCellSave(e, f, v)} disabled={!writeEnabled} />
                       </td>
+                      {writeEnabled && (
+                        <td style={{ textAlign: "center", width: 50 }}>
+                          {(() => {
+                            const expSplits = splits.filter((s) => s.expenseId === e.id);
+                            return (
+                              <button
+                                className="split-btn"
+                                onClick={() => setSplitExpense(e)}
+                                title={expSplits.length > 0 ? `${expSplits.length} splits` : "Split this expense"}
+                              >
+                                {expSplits.length > 0 ? `👥${expSplits.length}` : "✂️"}
+                              </button>
+                            );
+                          })()}
+                        </td>
+                      )}
                     </tr>
                   ))
                 )}
@@ -395,6 +416,15 @@ export default function OverviewTab({
             categories={allCategories}
             onAdd={(data) => onAdd?.(data)}
             onClose={() => setShowAddModal(false)}
+          />
+        )}
+
+        {splitExpense && (
+          <SplitModal
+            expense={splitExpense}
+            existingSplits={splits.filter((s) => s.expenseId === splitExpense.id)}
+            onSplit={onSplit}
+            onClose={() => setSplitExpense(null)}
           />
         )}
 

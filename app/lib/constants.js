@@ -28,6 +28,9 @@ export function formatCurrency(n) {
 }
 
 export function getNetAmount(expense) {
+  // Pre-computed by the API (includes splits calculation)
+  if (expense.netAmount !== undefined) return expense.netAmount;
+  // Fallback for backward compat
   const amount = Number(expense.amount) || 0;
   const repaid = Number(expense.repaid) || 0;
   return amount - repaid;

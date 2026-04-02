@@ -225,6 +225,161 @@ function colToLetter(idx) {
   return letter;
 }
 
+// ── SPLITS TAB ──────────────────────────────────────────
+
+const SPLITS_TAB = "Splits";
+const SPLITS_HEADERS = ["SplitID", "ExpenseID", "Person", "Share", "Repaid", "Status"];
+
+// Ensure the Splits tab exists with correct headers
+async function ensureSplitsTab(client, spreadsheetId) {
+  const metaRes = await client.request({
+    url: `${API}/${spreadsheetId}?fields=sheets.properties`,
+  });
+  const exists = metaRes.data.sheets.some(
+    (s) => s.properties.title === SPLITS_TAB
+  );
+
+  if (!exists) {
+    await client.request({
+      url: `${API}/${spreadsheetId}:batchUpdate`,
+      method: "POST",
+      data: {
+        requests: [{ addSheet: { properties: { title: SPLITS_TAB } } }],
+      },
+    });
+    // Write headers
+    await client.request({
+      url: `${API}/${spreadsheetId}/values/${encodeURIComponent(SPLITS_TAB)}!A1:F1?valueInputOption=RAW`,
+      method: "PUT",
+      data: { values: [SPLITS_HEADERS] },
+    });
+  }
+}
+
+// Read all splits
+export async function readAllSplits() {
+  const client = await getClient();
+  const spreadsheetId = getSheetId();
+  await ensureSplitsTab(client, spreadsheetId);
+
+  const res = await client.request({
+    url: `${API}/${spreadsheetId}/values/${encodeURIComponent(SPLITS_TAB)}`,
+  });
+
+  const rows = res.data.values || [];
+  if (rows.length <= 1) return [];
+
+  const headers = rows[0];
+  return rows.slice(1).map((row, idx) => {
+    const obj = {};
+    headers.forEach((h, i) => { obj[h] = row[i] || null; });
+    obj._rowIndex = idx + 2;
+    return obj;
+  });
+}
+
+// Add a split
+export async function addSplit(expenseId, person, share) {
+  const client = await getClient();
+  const spreadsheetId = getSheetId();
+  await ensureSplitsTab(client, spreadsheetId);
+
+  const splitId = crypto.randomUUID();
+  const row = [splitId, expenseId, person, share, 0, "pending"];
+
+  await client.request({
+    url: `${API}/${spreadsheetId}/values/${encodeURIComponent(SPLITS_TAB)}!A:A:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
+    method: "POST",
+    data: { values: [row] },
+  });
+
+  return splitId;
+}
+
+// Update a split (Repaid amount or Status)
+export async function updateSplit(splitId, fields) {
+  const client = await getClient();
+  const spreadsheetId = getSheetId();
+
+  const res = await client.request({
+    url: `${API}/${spreadsheetId}/values/${encodeURIComponent(SPLITS_TAB)}`,
+  });
+  const rows = res.data.values || [];
+  if (rows.length <= 1) throw new Error("Split not found");
+
+  const headers = rows[0];
+  let targetRow = null;
+  for (let i = 1; i < rows.length; i++) {
+    const sidIdx = headers.indexOf("SplitID");
+    if (rows[i][sidIdx] === splitId) {
+      targetRow = i + 1; // 1-based sheet row
+      break;
+    }
+  }
+  if (!targetRow) throw new Error(`Split ${splitId} not found`);
+
+  const updates = [];
+  for (const [field, value] of Object.entries(fields)) {
+    const colIdx = headers.indexOf(field);
+    if (colIdx === -1) continue;
+    updates.push({
+      range: `${SPLITS_TAB}!${colToLetter(colIdx)}${targetRow}`,
+      values: [[value === null || value === undefined ? "" : value]],
+    });
+  }
+
+  if (updates.length > 0) {
+    await client.request({
+      url: `${API}/${spreadsheetId}/values:batchUpdate`,
+      method: "POST",
+      data: { valueInputOption: "RAW", data: updates },
+    });
+  }
+}
+
+// Delete a split
+export async function deleteSplit(splitId) {
+  const client = await getClient();
+  const spreadsheetId = getSheetId();
+
+  const metaRes = await client.request({
+    url: `${API}/${spreadsheetId}?fields=sheets.properties`,
+  });
+  const splitsSheet = metaRes.data.sheets.find(
+    (s) => s.properties.title === SPLITS_TAB
+  );
+  if (!splitsSheet) throw new Error("Splits tab not found");
+  const splitsGid = splitsSheet.properties.sheetId;
+
+  const res = await client.request({
+    url: `${API}/${spreadsheetId}/values/${encodeURIComponent(SPLITS_TAB)}`,
+  });
+  const rows = res.data.values || [];
+  const headers = rows[0] || [];
+  const sidIdx = headers.indexOf("SplitID");
+
+  let targetRowIdx = null;
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i][sidIdx] === splitId) {
+      targetRowIdx = i;
+      break;
+    }
+  }
+  if (targetRowIdx === null) throw new Error(`Split ${splitId} not found`);
+
+  await client.request({
+    url: `${API}/${spreadsheetId}:batchUpdate`,
+    method: "POST",
+    data: {
+      requests: [{
+        deleteDimension: {
+          range: { sheetId: splitsGid, dimension: "ROWS", startIndex: targetRowIdx, endIndex: targetRowIdx + 1 },
+        },
+      }],
+    },
+  });
+}
+
 // Check if write is configured
 export function isWriteConfigured() {
   return !!getCredentials();
