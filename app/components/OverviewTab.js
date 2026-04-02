@@ -1,6 +1,6 @@
 "use client";
 import { useMemo } from "react";
-import { getCatColor, formatCurrency, formatMonthLabel, MONTHS } from "../lib/constants";
+import { getCatColor, formatCurrency, formatMonthLabel, MONTHS, getNetAmount } from "../lib/constants";
 import EmptyState from "./EmptyState";
 
 function StatCard({ label, value, sub, accentColor }) {
@@ -102,11 +102,11 @@ export default function OverviewTab({
   insights = [],
   onTabChange,
 }) {
-  const total = useMemo(() => monthData.reduce((s, e) => s + (Number(e.amount) || 0), 0), [monthData]);
+  const total = useMemo(() => monthData.reduce((s, e) => s + getNetAmount(e), 0), [monthData]);
   const currentIdx = monthKeys.indexOf(selectedMonth);
   const prevMonth = currentIdx > 0 ? monthKeys[currentIdx - 1] : null;
   const prevData = prevMonth ? (byMonth[prevMonth] || []) : [];
-  const prevTotal = prevData.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  const prevTotal = prevData.reduce((s, e) => s + getNetAmount(e), 0);
 
   const uniqueDays = useMemo(() => new Set(monthData.map((e) => e.date)).size, [monthData]);
   const dailyAvg = uniqueDays > 0 ? total / uniqueDays : 0;
@@ -114,7 +114,7 @@ export default function OverviewTab({
   const catTotals = useMemo(() => {
     const ct = {};
     monthData.forEach((e) => {
-      ct[e.category] = (ct[e.category] || 0) + (Number(e.amount) || 0);
+      ct[e.category] = (ct[e.category] || 0) + getNetAmount(e);
     });
     return Object.entries(ct).map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount);
   }, [monthData]);
@@ -123,7 +123,7 @@ export default function OverviewTab({
     const vt = {};
     monthData.forEach((e) => {
       const v = e.vendor || e.name;
-      if (v) vt[v] = (vt[v] || 0) + (Number(e.amount) || 0);
+      if (v) vt[v] = (vt[v] || 0) + getNetAmount(e);
     });
     return Object.entries(vt).sort((a, b) => b[1] - a[1]);
   }, [monthData]);

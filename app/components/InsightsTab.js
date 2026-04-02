@@ -1,6 +1,7 @@
 "use client";
 import { useState, useRef, useEffect, useCallback } from "react";
-import { formatCurrency, getCatColor } from "../lib/constants";
+import { formatCurrency, getCatColor, getNetAmount } from "../lib/constants";
+import CategoryManager from "./CategoryManager";
 import EmptyState from "./EmptyState";
 
 const SEVERITY_LABEL = {
@@ -145,6 +146,7 @@ export default function InsightsTab({
   onDeleteBudget,
   onDismiss,
   monthData = [],
+  onBatchCategoryUpdate,
 }) {
   const [showAddBudget, setShowAddBudget] = useState(false);
   const [newCat, setNewCat] = useState("");
@@ -152,7 +154,7 @@ export default function InsightsTab({
 
   const catTotals = {};
   monthData.forEach((e) => {
-    catTotals[e.category] = (catTotals[e.category] || 0) + (Number(e.amount) || 0);
+    catTotals[e.category] = (catTotals[e.category] || 0) + getNetAmount(e);
   });
 
   const allCats = Array.from(new Set([...Object.keys(budgets), ...Object.keys(catTotals)])).sort();
@@ -253,6 +255,9 @@ export default function InsightsTab({
           </div>
         )}
       </section>
+
+      {/* 2.5 Category Manager */}
+      <CategoryManager monthData={monthData} onBatchUpdate={onBatchCategoryUpdate} />
 
       {/* 3. Smart observations (non-warnings) */}
       {otherInsights.length > 0 && (

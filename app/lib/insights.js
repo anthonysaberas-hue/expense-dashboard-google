@@ -1,4 +1,4 @@
-import { formatCurrency, getPrevMonths } from "./constants";
+import { formatCurrency, getPrevMonths, getNetAmount } from "./constants";
 
 /**
  * Pure insight engine — no localStorage access.
@@ -17,7 +17,7 @@ function groupByMonthAndCategory(expenses) {
     const m = e.date?.substring(0, 7);
     if (!m) return;
     if (!result[m]) result[m] = {};
-    result[m][e.category] = (result[m][e.category] || 0) + (Number(e.amount) || 0);
+    result[m][e.category] = (result[m][e.category] || 0) + getNetAmount(e);
   });
   return result;
 }
@@ -34,7 +34,7 @@ function groupByMonth(expenses) {
 }
 
 function monthTotal(expenses) {
-  return expenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  return expenses.reduce((s, e) => s + getNetAmount(e), 0);
 }
 
 const rules = [
@@ -127,7 +127,7 @@ const rules = [
         const v = e.vendor || e.name;
         if (!m || !v) return;
         if (!byMonthVendor[v]) byMonthVendor[v] = {};
-        byMonthVendor[v][m] = (byMonthVendor[v][m] || 0) + (Number(e.amount) || 0);
+        byMonthVendor[v][m] = (byMonthVendor[v][m] || 0) + getNetAmount(e);
       });
 
       const subCat = ["Subscriptions"];
@@ -197,7 +197,7 @@ const rules = [
           if (streak >= 3 && months[i] === selectedMonth) {
             const avg = exps
               .filter((e) => e.date.startsWith(selectedMonth))
-              .reduce((s, e) => s + (Number(e.amount) || 0), 0);
+              .reduce((s, e) => s + getNetAmount(e), 0);
             results.push({
               id: `RECURRING_CHARGE_${vendor}_${selectedMonth}`,
               severity: "info",
@@ -339,12 +339,12 @@ const rules = [
       const byDay = {};
       monthExp.forEach((e) => {
         if (!e.date) return;
-        byDay[e.date] = (byDay[e.date] || 0) + (Number(e.amount) || 0);
+        byDay[e.date] = (byDay[e.date] || 0) + getNetAmount(e);
       });
 
       const days = Object.keys(byDay);
       if (days.length < 3) return [];
-      const dailyAvg = monthExp.reduce((s, e) => s + (Number(e.amount) || 0), 0) / days.length;
+      const dailyAvg = monthExp.reduce((s, e) => s + getNetAmount(e), 0) / days.length;
 
       const spikeDay = days.find((d) => byDay[d] > dailyAvg * 2);
       if (spikeDay) {

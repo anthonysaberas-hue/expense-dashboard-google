@@ -8,6 +8,8 @@ import CategoriesTab from "./components/CategoriesTab";
 import TransactionsTab from "./components/TransactionsTab";
 import InsightsTab from "./components/InsightsTab";
 import ErrorBoundary from "./components/ErrorBoundary";
+import DateRangePicker from "./components/DateRangePicker";
+import TopCategories from "./components/TopCategories";
 import { runInsights } from "./lib/insights";
 import { getBudgets, setBudget, deleteBudget } from "./lib/budgets";
 import { safeGet, safeSet } from "./lib/storage";
@@ -37,10 +39,12 @@ export default function Dashboard() {
   const [error, setError] = useState(null);
   const [selectedMonth, setSelectedMonth] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [writeEnabled, setWriteEnabled] = useState(false);
   const [activeTab, setActiveTab] = useState(0);
   const [budgets, setBudgets] = useState(() => getBudgets());
   const [theme, setThemeState] = useState(() => getTheme());
   const [dismissedInsights, setDismissedInsights] = useState(() => safeGet("dismissed_insights", {}));
+  const [dateRange, setDateRange] = useState({ start: null, end: null });
   const transactionsSearchRef = useRef(null);
 
   // ── Fetch ────────────────────────────────────────────────────
@@ -53,6 +57,7 @@ export default function Dashboard() {
       const data = await resp.json();
       setExpenses(data.expenses || []);
       setLastUpdated(data.lastUpdated);
+      setWriteEnabled(!!data.writeEnabled);
       const months = [...new Set(
         (data.expenses || []).map((e) => e.date?.substring(0, 7)).filter(Boolean)
       )].sort();
@@ -79,7 +84,31 @@ export default function Dashboard() {
   }, [expenses]);
 
   const monthKeys = useMemo(() => Object.keys(byMonth).sort(), [byMonth]);
-  const monthData = byMonth[selectedMonth] || [];
+  const rawMonthData = byMonth[selectedMonth] || [];
+
+  // Auto-set date range bounds when month changes
+  useEffect(() => {
+    if (selectedMonth) {
+      const [y, m] = selectedMonth.split("-").map(Number);
+      setDateRange({
+        start: new Date(y, m - 1, 1),
+        end: new Date(y, m, 0), // last day of month
+      });
+    }
+  }, [selectedMonth]);
+
+  // Filter by date range
+  const monthData = useMemo(() => {
+    if (!dateRange.start || !dateRange.end) return rawMonthData;
+    const startStr = `${dateRange.start.getFullYear()}-${String(dateRange.start.getMonth() + 1).padStart(2, "0")}-${String(dateRange.start.getDate()).padStart(2, "0")}`;
+    const endStr = `${dateRange.end.getFullYear()}-${String(dateRange.end.getMonth() + 1).padStart(2, "0")}-${String(dateRange.end.getDate()).padStart(2, "0")}`;
+    return rawMonthData.filter((e) => e.date >= startStr && e.date <= endStr);
+  }, [rawMonthData, dateRange]);
+
+  // Previous month data for TopCategories
+  const prevMonthIdx = monthKeys.indexOf(selectedMonth);
+  const prevMonthKey = prevMonthIdx > 0 ? monthKeys[prevMonthIdx - 1] : null;
+  const prevMonthData = prevMonthKey ? (byMonth[prevMonthKey] || []) : [];
 
   const insights = useMemo(
     () => runInsights(expenses, budgets, selectedMonth),
@@ -150,6 +179,57 @@ export default function Dashboard() {
     setBudgets(deleteBudget(category));
   }, []);
 
+  // ── Write operations ─────────────────────────────────────────
+  const handleUpdateExpense = useCallback(async (id, fields) => {
+    const res = await fetch("/api/expenses", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, ...fields }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || "Update failed");
+    }
+    await fetchExpenses();
+  }, [fetchExpenses]);
+
+  const handleAddExpense = useCallback(async (data) => {
+    const res = await fetch("/api/expenses", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || "Add failed");
+    }
+    await fetchExpenses();
+  }, [fetchExpenses]);
+
+  const handleBatchCategoryUpdate = useCallback(async (oldCategory, newCategory) => {
+    // Find all expenses with the old category and update them
+    const toUpdate = expenses.filter((e) => e.category === oldCategory && e.id);
+    for (const expense of toUpdate) {
+      await fetch("/api/expenses", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: expense.id, category: newCategory }),
+      });
+    }
+    await fetchExpenses();
+  }, [expenses, fetchExpenses]);
+
+  const handleDeleteExpense = useCallback(async (id) => {
+    const res = await fetch(`/api/expenses?id=${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || "Delete failed");
+    }
+    await fetchExpenses();
+  }, [fetchExpenses]);
+
   // ── Tab rendering ─────────────────────────────────────────────
   const tabProps = { monthData, byMonth, monthKeys, selectedMonth, expenses };
 
@@ -158,7 +238,16 @@ export default function Dashboard() {
       case 0: return <OverviewTab {...tabProps} insights={activeInsights} onTabChange={setActiveTab} />;
       case 1: return <TrendsTab {...tabProps} />;
       case 2: return <CategoriesTab {...tabProps} budgets={budgets} />;
-      case 3: return <TransactionsTab {...tabProps} searchRef={transactionsSearchRef} />;
+      case 3: return (
+          <TransactionsTab
+            {...tabProps}
+            searchRef={transactionsSearchRef}
+            writeEnabled={writeEnabled}
+            onUpdate={handleUpdateExpense}
+            onAdd={handleAddExpense}
+            onDelete={handleDeleteExpense}
+          />
+        );
       case 4: return (
         <InsightsTab
           insights={activeInsights}
@@ -167,6 +256,7 @@ export default function Dashboard() {
           onDeleteBudget={handleDeleteBudget}
           onDismiss={dismissInsight}
           monthData={monthData}
+          onBatchCategoryUpdate={handleBatchCategoryUpdate}
         />
       );
       default: return null;
@@ -209,7 +299,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Month selector */}
+        {/* Month selector + Date range picker */}
         {!loading && !error && monthKeys.length > 0 && (
           <div className="month-selector" role="group" aria-label="Select month">
             {monthKeys.map((m) => (
@@ -223,6 +313,11 @@ export default function Dashboard() {
                 {formatMonthLabel(m)}
               </button>
             ))}
+            <DateRangePicker
+              startDate={dateRange.start}
+              endDate={dateRange.end}
+              onChange={(start, end) => setDateRange({ start, end })}
+            />
           </div>
         )}
       </header>
@@ -257,17 +352,22 @@ export default function Dashboard() {
             </div>
           </div>
         ) : (
-          <div
-            key={`${activeTab}-${selectedMonth}`}
-            className="tab-panel"
-            role="tabpanel"
-            aria-labelledby={`tab-${activeTab}`}
-            id={`tabpanel-${activeTab}`}
-          >
-            <ErrorBoundary key={activeTab}>
-              {renderTab()}
-            </ErrorBoundary>
-          </div>
+          <>
+            {(activeTab === 0 || activeTab === 2) && monthData.length > 0 && (
+              <TopCategories monthData={monthData} prevMonthData={prevMonthData} budgets={budgets} />
+            )}
+            <div
+              key={`${activeTab}-${selectedMonth}`}
+              className="tab-panel"
+              role="tabpanel"
+              aria-labelledby={`tab-${activeTab}`}
+              id={`tabpanel-${activeTab}`}
+            >
+              <ErrorBoundary key={activeTab}>
+                {renderTab()}
+              </ErrorBoundary>
+            </div>
+          </>
         )}
       </main>
     </div>

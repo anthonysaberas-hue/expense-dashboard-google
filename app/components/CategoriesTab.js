@@ -1,6 +1,6 @@
 "use client";
 import { useState, useMemo } from "react";
-import { getCatColor, formatCurrency, formatMonthLabel, getPrevMonths } from "../lib/constants";
+import { getCatColor, formatCurrency, formatMonthLabel, getPrevMonths, getNetAmount } from "../lib/constants";
 import Sparkline from "./Sparkline";
 import EmptyState from "./EmptyState";
 
@@ -112,6 +112,96 @@ function CategoryCard({ cat, amount, total, prevAmount, sparkData, budgetLimit, 
   );
 }
 
+function SpendingTable({ catData, prevCatTotals, budgets }) {
+  const [sortKey, setSortKey] = useState("actual");
+  const [sortDir, setSortDir] = useState("desc");
+
+  const handleSort = (key) => {
+    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortKey(key); setSortDir("desc"); }
+  };
+
+  const rows = catData.map(({ cat, amount }) => {
+    const estimated = budgets[cat] || prevCatTotals[cat] || 0;
+    const diff = amount - estimated;
+    const diffPct = estimated > 0 ? ((diff / estimated) * 100).toFixed(1) : null;
+    return { cat, estimated, actual: amount, diff, diffPct };
+  });
+
+  const sorted = [...rows].sort((a, b) => {
+    const av = a[sortKey] ?? 0;
+    const bv = b[sortKey] ?? 0;
+    if (typeof av === "string") return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
+    return sortDir === "asc" ? av - bv : bv - av;
+  });
+
+  const arrow = (key) => sortKey === key ? (sortDir === "asc" ? " ↑" : " ↓") : " ↕";
+
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <p className="section-label" style={{ margin: "0 0 12px" }}>Spending by Categories</p>
+      <div style={{ overflowX: "auto" }}>
+        <table className="tx-table" aria-label="Spending by categories">
+          <thead>
+            <tr>
+              <th style={{ textAlign: "left", cursor: "pointer" }} onClick={() => handleSort("cat")} className={sortKey === "cat" ? "active-sort" : ""}>
+                Category{arrow("cat")}
+              </th>
+              <th style={{ textAlign: "right", cursor: "pointer" }} onClick={() => handleSort("estimated")} className={sortKey === "estimated" ? "active-sort" : ""}>
+                Estimated{arrow("estimated")}
+              </th>
+              <th style={{ textAlign: "right", cursor: "pointer" }} onClick={() => handleSort("actual")} className={sortKey === "actual" ? "active-sort" : ""}>
+                Actual{arrow("actual")}
+              </th>
+              <th style={{ textAlign: "right", cursor: "pointer" }} onClick={() => handleSort("diff")} className={sortKey === "diff" ? "active-sort" : ""}>
+                Difference{arrow("diff")}
+              </th>
+              <th style={{ textAlign: "right" }}>%</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map(({ cat, estimated, actual, diff, diffPct }) => (
+              <tr key={cat}>
+                <td>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{
+                      width: 8, height: 8, borderRadius: "50%",
+                      background: getCatColor(cat), flexShrink: 0,
+                    }} />
+                    <span style={{ fontWeight: 500 }}>{cat}</span>
+                  </div>
+                </td>
+                <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: "var(--text-secondary)" }}>
+                  {formatCurrency(estimated)}
+                </td>
+                <td style={{ textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                  {formatCurrency(actual)}
+                </td>
+                <td style={{
+                  textAlign: "right",
+                  fontWeight: 600,
+                  fontVariantNumeric: "tabular-nums",
+                  color: diff > 0 ? "var(--red)" : diff < 0 ? "var(--green)" : "var(--text-muted)",
+                }}>
+                  {diff > 0 ? "+" : ""}{formatCurrency(diff)}
+                </td>
+                <td style={{
+                  textAlign: "right",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: diff > 0 ? "var(--red)" : diff < 0 ? "var(--green)" : "var(--text-muted)",
+                }}>
+                  {diffPct !== null ? `${Number(diffPct) > 0 ? "+" : ""}${diffPct}%` : "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export default function CategoriesTab({
   monthData = [],
   byMonth = {},
@@ -120,7 +210,7 @@ export default function CategoriesTab({
   expenses = [],
   budgets = {},
 }) {
-  const total = monthData.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  const total = monthData.reduce((s, e) => s + getNetAmount(e), 0);
 
   const currentIdx = monthKeys.indexOf(selectedMonth);
   const prevMonth = currentIdx > 0 ? monthKeys[currentIdx - 1] : null;
@@ -129,7 +219,7 @@ export default function CategoriesTab({
   const prevCatTotals = useMemo(() => {
     const ct = {};
     prevData.forEach((e) => {
-      ct[e.category] = (ct[e.category] || 0) + (Number(e.amount) || 0);
+      ct[e.category] = (ct[e.category] || 0) + getNetAmount(e);
     });
     return ct;
   }, [prevData]);
@@ -142,7 +232,7 @@ export default function CategoriesTab({
   const catData = useMemo(() => {
     const ct = {};
     monthData.forEach((e) => {
-      ct[e.category] = (ct[e.category] || 0) + (Number(e.amount) || 0);
+      ct[e.category] = (ct[e.category] || 0) + getNetAmount(e);
     });
     return Object.entries(ct)
       .map(([cat, amount]) => ({ cat, amount }))
@@ -161,10 +251,14 @@ export default function CategoriesTab({
 
   return (
     <div>
+      {/* Estimated vs Actual spending table */}
+      <SpendingTable catData={catData} prevCatTotals={prevCatTotals} budgets={budgets} />
+
+      {/* Category cards grid */}
       <div className="category-grid">
         {catData.map(({ cat, amount }) => {
           const sparkData = last6Months.map((m) =>
-            (byMonth[m] || []).filter((e) => e.category === cat).reduce((s, e) => s + (Number(e.amount) || 0), 0)
+            (byMonth[m] || []).filter((e) => e.category === cat).reduce((s, e) => s + getNetAmount(e), 0)
           );
           const transactions = monthData.filter((e) => e.category === cat);
           return (

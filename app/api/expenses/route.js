@@ -1,91 +1,54 @@
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import { NextResponse } from "next/server";
+import {
+  readAllRows,
+  ensureColumns,
+  updateRow,
+  appendRow,
+  deleteRow,
+  isWriteConfigured,
+} from "../../lib/sheets";
 
-const SHEET_ID = process.env.GOOGLE_SHEET_ID || "1J2fRLD_lk_MaB77VesONXbHKFjMtEMPSNyb8tGTXvok";
+function normalize(row) {
+  let date = row.Date || null;
+  if (date && typeof date === "string" && date.startsWith("Date(")) {
+    const m = date.match(/Date\((\d+),\s*(\d+),\s*(\d+)\)/);
+    if (m) {
+      date = `${m[1]}-${String(parseInt(m[2]) + 1).padStart(2, "0")}-${String(m[3]).padStart(2, "0")}`;
+    }
+  }
 
+  return {
+    id: row.ID || null,
+    name: row.Name || "",
+    date,
+    amount: typeof row.Amount === "number" ? row.Amount : parseFloat(row.Amount) || 0,
+    vendor: row.Vendor || "",
+    category: row.Category || "Uncategorized",
+    source: row.Source || "",
+    rawSubject: row["Raw Email Subject"] || "",
+    repaid: typeof row.Repaid === "number" ? row.Repaid : parseFloat(row.Repaid) || 0,
+    notes: row.Notes || "",
+  };
+}
+
+// GET — read all expenses
 export async function GET() {
   try {
-    const GID = process.env.GOOGLE_SHEET_GID || "1367308403";
-    const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&gid=${GID}`;
-    const resp = await fetch(url, { cache: "no-store" });
-    const text = await resp.text();
+    // Ensure ID/Repaid/Notes columns exist and IDs are populated
+    await ensureColumns();
 
-    if (!resp.ok) {
-      return NextResponse.json(
-        { error: "Google Sheets returned HTTP " + resp.status, details: text.slice(0, 500) },
-        { status: 500 }
-      );
-    }
-
-    // Google Sheets returns JSONP-like response, strip the wrapper
-    const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]*)\);?\s*$/);
-    if (!match) {
-      return NextResponse.json(
-        { error: "Unexpected response from Google Sheets (sheet may not be public)", details: text.slice(0, 500) },
-        { status: 500 }
-      );
-    }
-    const data = JSON.parse(match[1]);
-
-    const cols = data.table.cols.map((c) => c.label);
-    const rows = data.table.rows;
-
-    const expenses = rows
-      .map((row) => {
-        const cells = row.c;
-        const obj = {};
-        cols.forEach((col, i) => {
-          if (!col) return;
-          const cell = cells[i];
-          if (!cell) {
-            obj[col] = null;
-            return;
-          }
-          // Google Sheets date format: Date(year, month, day)
-          if (cell.f && col === "Date") {
-            obj[col] = cell.f;
-          } else if (cell.v !== null && cell.v !== undefined) {
-            obj[col] = cell.v;
-          } else {
-            obj[col] = cell.f || null;
-          }
-        });
-        return obj;
-      })
-      .filter((e) => e.Name || e.Vendor);
-
-    // Normalize to expected format
-    const normalized = expenses.map((e) => {
-      let date = e.Date || null;
-      // Handle Google Sheets Date(year, month, day) format
-      if (date && typeof date === "string" && date.startsWith("Date(")) {
-        const match = date.match(/Date\((\d+),\s*(\d+),\s*(\d+)\)/);
-        if (match) {
-          const y = match[1];
-          const m = String(parseInt(match[2]) + 1).padStart(2, "0");
-          const d = String(match[3]).padStart(2, "0");
-          date = `${y}-${m}-${d}`;
-        }
-      }
-
-      return {
-        name: e.Name || "",
-        date: date,
-        amount: typeof e.Amount === "number" ? e.Amount : parseFloat(e.Amount) || 0,
-        vendor: e.Vendor || "",
-        category: e.Category || "Uncategorized",
-        source: e.Source || "",
-        rawSubject: e["Raw Email Subject"] || "",
-      };
-    });
+    const { data } = await readAllRows();
+    const expenses = data.filter((r) => r.Name || r.Vendor).map(normalize);
 
     return NextResponse.json(
       {
-        expenses: normalized,
-        count: normalized.length,
+        expenses,
+        count: expenses.length,
         lastUpdated: new Date().toISOString(),
+        writeEnabled: isWriteConfigured(),
       },
       {
         headers: {
@@ -95,10 +58,122 @@ export async function GET() {
       }
     );
   } catch (error) {
-    console.error("Google Sheets error:", error);
+    console.error("Sheets API read error:", error);
     return NextResponse.json(
-      { error: "Failed to fetch expenses from Google Sheets", details: error.message },
+      { error: "Failed to fetch expenses", details: error.message },
       { status: 500 }
+    );
+  }
+}
+
+// PATCH — update an existing row
+export async function PATCH(request) {
+  try {
+    if (!isWriteConfigured()) {
+      return NextResponse.json(
+        { error: "Write not configured — set GOOGLE_SERVICE_ACCOUNT_KEY" },
+        { status: 503 }
+      );
+    }
+
+    const body = await request.json();
+    const { id, ...fields } = body;
+
+    if (!id) {
+      return NextResponse.json({ error: "Missing id" }, { status: 400 });
+    }
+
+    // Map frontend field names to Sheet column names
+    const sheetFields = {};
+    if (fields.name !== undefined) sheetFields.Name = fields.name;
+    if (fields.date !== undefined) sheetFields.Date = fields.date;
+    if (fields.amount !== undefined) sheetFields.Amount = fields.amount;
+    if (fields.vendor !== undefined) sheetFields.Vendor = fields.vendor;
+    if (fields.category !== undefined) sheetFields.Category = fields.category;
+    if (fields.repaid !== undefined) sheetFields.Repaid = fields.repaid;
+    if (fields.notes !== undefined) sheetFields.Notes = fields.notes;
+
+    await updateRow(id, sheetFields);
+
+    return NextResponse.json({ ok: true, id });
+  } catch (error) {
+    console.error("Sheets API update error:", error);
+    const status = error.message.includes("not found") ? 404 : 500;
+    return NextResponse.json(
+      { error: error.message },
+      { status }
+    );
+  }
+}
+
+// POST — add a new row
+export async function POST(request) {
+  try {
+    if (!isWriteConfigured()) {
+      return NextResponse.json(
+        { error: "Write not configured — set GOOGLE_SERVICE_ACCOUNT_KEY" },
+        { status: 503 }
+      );
+    }
+
+    const body = await request.json();
+
+    if (!body.date || body.amount === undefined) {
+      return NextResponse.json(
+        { error: "Missing required fields: date, amount" },
+        { status: 400 }
+      );
+    }
+
+    const sheetFields = {
+      Name: body.name || body.vendor || "",
+      Date: body.date,
+      Amount: body.amount,
+      Category: body.category || "Uncategorized",
+      Vendor: body.vendor || "",
+      Source: "Dashboard",
+      Repaid: body.repaid || 0,
+      Notes: body.notes || "",
+    };
+
+    const id = await appendRow(sheetFields);
+
+    return NextResponse.json({ ok: true, id });
+  } catch (error) {
+    console.error("Sheets API append error:", error);
+    return NextResponse.json(
+      { error: error.message },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE — remove a row by ID
+export async function DELETE(request) {
+  try {
+    if (!isWriteConfigured()) {
+      return NextResponse.json(
+        { error: "Write not configured — set GOOGLE_SERVICE_ACCOUNT_KEY" },
+        { status: 503 }
+      );
+    }
+
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id");
+
+    if (!id) {
+      return NextResponse.json({ error: "Missing id" }, { status: 400 });
+    }
+
+    await deleteRow(id);
+
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    console.error("Sheets API delete error:", error);
+    const status = error.message.includes("not found") ? 404 : 500;
+    return NextResponse.json(
+      { error: error.message },
+      { status }
     );
   }
 }

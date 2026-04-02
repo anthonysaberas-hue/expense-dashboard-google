@@ -27,6 +27,12 @@ export function formatCurrency(n) {
   return "$" + num.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
+export function getNetAmount(expense) {
+  const amount = Number(expense.amount) || 0;
+  const repaid = Number(expense.repaid) || 0;
+  return amount - repaid;
+}
+
 export function formatMonthLabel(yyyymm, short = true) {
   if (!yyyymm) return "";
   const [year, month] = yyyymm.split("-");

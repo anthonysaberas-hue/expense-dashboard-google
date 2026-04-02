@@ -1,6 +1,6 @@
 "use client";
 import { useMemo } from "react";
-import { getCatColor, formatCurrency, formatMonthLabel, MONTHS, getPrevMonths } from "../lib/constants";
+import { getCatColor, formatCurrency, formatMonthLabel, MONTHS, getPrevMonths, getNetAmount } from "../lib/constants";
 import Sparkline from "./Sparkline";
 import EmptyState from "./EmptyState";
 
@@ -13,8 +13,8 @@ function YoYSection({ byMonth, selectedMonth }) {
   const currentData = byMonth[selectedMonth] || [];
   const priorData = byMonth[priorYear] || [];
 
-  const currentTotal = currentData.reduce((s, e) => s + (Number(e.amount) || 0), 0);
-  const priorTotal = priorData.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  const currentTotal = currentData.reduce((s, e) => s + getNetAmount(e), 0);
+  const priorTotal = priorData.reduce((s, e) => s + getNetAmount(e), 0);
   const delta = priorTotal > 0 ? ((currentTotal - priorTotal) / priorTotal * 100).toFixed(1) : null;
   const isUp = currentTotal > priorTotal;
 
@@ -63,7 +63,7 @@ function YTDCumulativeLine({ byMonth, monthKeys, selectedYear }) {
 
   let cumulative = 0;
   const points = yearMonths.map((m) => {
-    const total = (byMonth[m] || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
+    const total = (byMonth[m] || []).reduce((s, e) => s + getNetAmount(e), 0);
     cumulative += total;
     return cumulative;
   });
@@ -118,7 +118,7 @@ export default function TrendsTab({ monthData = [], byMonth = {}, monthKeys = []
   const monthlyTotals = useMemo(() => monthKeys.map((m) => ({
     label: formatMonthLabel(m),
     month: m,
-    total: (byMonth[m] || []).reduce((s, e) => s + (Number(e.amount) || 0), 0),
+    total: (byMonth[m] || []).reduce((s, e) => s + getNetAmount(e), 0),
   })), [byMonth, monthKeys]);
 
   // Category sparklines: last 6 months
@@ -136,11 +136,11 @@ export default function TrendsTab({ monthData = [], byMonth = {}, monthKeys = []
     return categories.map((cat) => ({
       cat,
       data: last6Months.map((m) =>
-        (byMonth[m] || []).filter((e) => e.category === cat).reduce((s, e) => s + (Number(e.amount) || 0), 0)
+        (byMonth[m] || []).filter((e) => e.category === cat).reduce((s, e) => s + getNetAmount(e), 0)
       ),
       currentTotal: (byMonth[selectedMonth] || [])
         .filter((e) => e.category === cat)
-        .reduce((s, e) => s + (Number(e.amount) || 0), 0),
+        .reduce((s, e) => s + getNetAmount(e), 0),
     })).filter((c) => c.data.some((v) => v > 0));
   }, [categories, last6Months, byMonth, selectedMonth]);
 
