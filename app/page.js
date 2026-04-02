@@ -16,7 +16,7 @@ import { safeGet, safeSet } from "./lib/storage";
 import { applyTheme, getTheme } from "./lib/theme";
 import { formatMonthLabel } from "./lib/constants";
 
-const TAB_LABELS = ["Overview", "Trends", "Categories", "People", "Insights"];
+const TAB_LABELS = ["Overview", "Categories", "People", "Trends", "Insights"];
 
 function SkeletonLoader() {
   return (
@@ -291,9 +291,8 @@ export default function Dashboard() {
           onSplit={handleSplitExpense}
         />
       );
-      case 1: return <TrendsTab {...tabProps} />;
-      case 2: return <CategoriesTab {...tabProps} budgets={budgets} />;
-      case 3: return (
+      case 1: return <CategoriesTab {...tabProps} budgets={budgets} />;
+      case 2: return (
         <PeopleTab
           expenses={expenses}
           splits={splits}
@@ -302,6 +301,7 @@ export default function Dashboard() {
           writeEnabled={writeEnabled}
         />
       );
+      case 3: return <TrendsTab {...tabProps} />;
       case 4: return (
         <InsightsTab
           insights={activeInsights}
@@ -407,7 +407,7 @@ export default function Dashboard() {
           </div>
         ) : (
           <>
-            {(activeTab === 0 || activeTab === 2) && monthData.length > 0 && (
+            {(activeTab === 0 || activeTab === 1) && monthData.length > 0 && (
               <TopCategories monthData={monthData} prevMonthData={prevMonthData} budgets={budgets} />
             )}
             <div
