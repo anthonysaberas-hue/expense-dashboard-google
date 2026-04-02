@@ -1,6 +1,6 @@
 "use client";
 import { useMemo, useState, useCallback, useEffect } from "react";
-import { getCatColor, formatCurrency, formatMonthLabel, MONTHS, getNetAmount } from "../lib/constants";
+import { getCatColor, formatCurrency, formatMonthLabel, MONTHS, getNetAmount, getPrevMonths } from "../lib/constants";
 import EditableCell from "./EditableCell";
 import AddExpenseModal from "./AddExpenseModal";
 import SplitModal from "./SplitModal";
@@ -74,26 +74,115 @@ function DonutChart({ data }) {
   );
 }
 
-function BarChart({ data, labelKey, valueKey, colorFn }) {
-  const max = Math.max(...data.map((d) => d[valueKey]), 1);
+function CategoryBreakdown({ catTotals, total, monthData, prevCatTotals, budgets, byMonth, selectedMonth, sparkMonths }) {
+  const [expanded, setExpanded] = useState(null);
+  const max = Math.max(...catTotals.map((d) => d.amount), 1);
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-      {data.map((d, i) => (
-        <div key={i} className="mom-bar-row">
-          <span className="mom-bar-label">{d[labelKey]}</span>
-          <div className="mom-bar-track">
+    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      {catTotals.map((d) => {
+        const isOpen = expanded === d.category;
+        const pct = total > 0 ? ((d.amount / total) * 100).toFixed(1) : "0";
+        const prev = prevCatTotals[d.category] || 0;
+        const delta = prev > 0 ? ((d.amount - prev) / prev * 100).toFixed(1) : null;
+        const isUp = d.amount > prev;
+        const budget = budgets?.[d.category];
+        const budgetPct = budget ? Math.min((d.amount / budget) * 100, 100) : null;
+        const budgetColor = budgetPct ? (budgetPct > 100 ? "var(--red)" : budgetPct > 80 ? "var(--amber)" : "var(--green)") : null;
+        const transactions = monthData.filter((e) => e.category === d.category).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+        const sparkData = sparkMonths.map((m) =>
+          (byMonth[m] || []).filter((e) => e.category === d.category).reduce((s, e) => s + getNetAmount(e), 0)
+        );
+
+        return (
+          <div key={d.category}>
             <div
-              className="mom-bar-fill"
-              style={{
-                width: `${(d[valueKey] / max) * 100}%`,
-                background: colorFn ? colorFn(d) : "var(--green)",
-                minWidth: d[valueKey] > 0 ? 3 : 0,
-              }}
-            />
-            <span className="mom-bar-val">{formatCurrency(d[valueKey])}</span>
+              className={`cat-bar-row${isOpen ? " cat-bar-open" : ""}`}
+              onClick={() => setExpanded(isOpen ? null : d.category)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => e.key === "Enter" && setExpanded(isOpen ? null : d.category)}
+              aria-expanded={isOpen}
+            >
+              <span className="mom-bar-label" style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                <span style={{ width: 8, height: 8, borderRadius: 2, background: getCatColor(d.category), flexShrink: 0 }} />
+                {d.category}
+              </span>
+              <div className="mom-bar-track">
+                <div
+                  className="mom-bar-fill"
+                  style={{
+                    width: `${(d.amount / max) * 100}%`,
+                    background: getCatColor(d.category),
+                    minWidth: d.amount > 0 ? 3 : 0,
+                  }}
+                />
+                <span className="mom-bar-val">{formatCurrency(d.amount)}</span>
+              </div>
+              <span className={`chevron${isOpen ? " open" : ""}`} style={{ marginLeft: 4, fontSize: 10 }} aria-hidden="true">▼</span>
+            </div>
+
+            {isOpen && (
+              <div className="cat-bar-detail">
+                {/* Stats row */}
+                <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 10, fontSize: 11 }}>
+                  <span style={{ color: "var(--text-muted)" }}>{pct}% of total</span>
+                  {delta !== null && (
+                    <span style={{ color: isUp ? "var(--red)" : "var(--green)", fontWeight: 600 }}>
+                      {isUp ? "↑" : "↓"} {Math.abs(Number(delta))}% vs last month
+                    </span>
+                  )}
+                  {sparkData.length > 1 && (
+                    <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                      {sparkData.map((v, i) => {
+                        const sparkMax = Math.max(...sparkData, 1);
+                        return <span key={i} style={{ display: "inline-block", width: 4, height: Math.max(2, (v / sparkMax) * 18), background: getCatColor(d.category), borderRadius: 1, opacity: 0.4 + (i / sparkData.length) * 0.6 }} />;
+                      })}
+                    </span>
+                  )}
+                </div>
+
+                {/* Budget bar */}
+                {budget && (
+                  <div style={{ marginBottom: 10 }}>
+                    <div className="budget-bar-track">
+                      <div className="budget-bar-fill" style={{ width: `${budgetPct}%`, background: budgetColor }} />
+                    </div>
+                    <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 3, display: "flex", justifyContent: "space-between" }}>
+                      <span>{formatCurrency(d.amount)} / {formatCurrency(budget)}</span>
+                      <span>{budgetPct.toFixed(0)}% used</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Transactions */}
+                {transactions.length > 0 ? (
+                  <table className="tx-table" style={{ fontSize: 12 }}>
+                    <thead>
+                      <tr>
+                        <th style={{ textAlign: "left" }}>Date</th>
+                        <th style={{ textAlign: "left" }}>Vendor</th>
+                        <th style={{ textAlign: "right" }}>Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {transactions.map((t, i) => (
+                        <tr key={i}>
+                          <td style={{ color: "var(--text-muted)" }}>{t.date}</td>
+                          <td>{t.vendor || t.name}</td>
+                          <td style={{ textAlign: "right", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{formatCurrency(t.amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p style={{ color: "var(--text-muted)", fontSize: 12, margin: 0 }}>No transactions.</p>
+                )}
+              </div>
+            )}
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -137,6 +226,7 @@ export default function OverviewTab({
   searchRef,
   splits = [],
   onSplit,
+  budgets = {},
 }) {
   const total = useMemo(() => monthData.reduce((s, e) => s + getNetAmount(e), 0), [monthData]);
   const currentIdx = monthKeys.indexOf(selectedMonth);
@@ -154,6 +244,18 @@ export default function OverviewTab({
     });
     return Object.entries(ct).map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount);
   }, [monthData]);
+
+  const prevCatTotals = useMemo(() => {
+    const ct = {};
+    prevData.forEach((e) => { ct[e.category] = (ct[e.category] || 0) + getNetAmount(e); });
+    return ct;
+  }, [prevData]);
+
+  const sparkMonths = useMemo(() => {
+    if (!selectedMonth) return [];
+    const priorM = getPrevMonths(selectedMonth, 5);
+    return [selectedMonth, ...priorM].reverse().filter((m) => byMonth[m]);
+  }, [selectedMonth, byMonth]);
 
   const vendorTotals = useMemo(() => {
     const vt = {};
@@ -261,7 +363,7 @@ export default function OverviewTab({
             <div style={{ fontSize: 13, marginTop: 2 }}>{topWarning.body}</div>
           </div>
           <button
-            onClick={() => onTabChange(4)}
+            onClick={() => onTabChange(3)}
             style={{ marginLeft: "auto", flexShrink: 0, background: "none", border: "1px solid var(--red)", borderRadius: "var(--radius-sm)", color: "var(--red)", padding: "4px 10px", fontSize: 12, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}
             aria-label="View all insights"
           >
@@ -295,7 +397,16 @@ export default function OverviewTab({
         </div>
         <div className="card">
           <p className="section-label">Category breakdown</p>
-          <BarChart data={catTotals} labelKey="category" valueKey="amount" colorFn={(d) => getCatColor(d.category)} />
+          <CategoryBreakdown
+            catTotals={catTotals}
+            total={total}
+            monthData={monthData}
+            prevCatTotals={prevCatTotals}
+            budgets={budgets}
+            byMonth={byMonth}
+            selectedMonth={selectedMonth}
+            sparkMonths={sparkMonths}
+          />
         </div>
       </div>
 

@@ -1293,6 +1293,28 @@ body {
   transition: transform 0.1s;
 }
 .catmgr-color-option:hover { transform: scale(1.2); border-color: var(--text); }
+/* ========== CATEGORY BAR DRILL-DOWN ========== */
+.cat-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 2px;
+  padding: 5px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.cat-bar-row:hover { background: var(--surface-hover); }
+.cat-bar-open { background: var(--surface-hover); }
+.cat-bar-detail {
+  padding: 12px 16px;
+  margin: 0 0 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  animation: fade-in 0.15s ease-out;
+}
+
 /* ========== SPLIT BUTTON ========== */
 .split-btn {
   background: none;

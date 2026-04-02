@@ -4,7 +4,6 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import TabBar from "./components/TabBar";
 import OverviewTab from "./components/OverviewTab";
 import TrendsTab from "./components/TrendsTab";
-import CategoriesTab from "./components/CategoriesTab";
 import InsightsTab from "./components/InsightsTab";
 import PeopleTab from "./components/PeopleTab";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -16,7 +15,7 @@ import { safeGet, safeSet } from "./lib/storage";
 import { applyTheme, getTheme } from "./lib/theme";
 import { formatMonthLabel } from "./lib/constants";
 
-const TAB_LABELS = ["Overview", "Categories", "People", "Trends", "Insights"];
+const TAB_LABELS = ["Overview", "People", "Trends", "Insights"];
 
 function SkeletonLoader() {
   return (
@@ -136,7 +135,7 @@ export default function Dashboard() {
   useEffect(() => {
     const handleKey = (e) => {
       if (e.target.matches("input, textarea, [contenteditable]")) return;
-      if (e.key >= "1" && e.key <= "5") {
+      if (e.key >= "1" && e.key <= "4") {
         e.preventDefault();
         setActiveTab(Number(e.key) - 1);
       } else if (e.key === "ArrowLeft") {
@@ -289,10 +288,10 @@ export default function Dashboard() {
           onDelete={handleDeleteExpense}
           splits={splits}
           onSplit={handleSplitExpense}
+          budgets={budgets}
         />
       );
-      case 1: return <CategoriesTab {...tabProps} budgets={budgets} />;
-      case 2: return (
+      case 1: return (
         <PeopleTab
           expenses={expenses}
           splits={splits}
@@ -301,8 +300,8 @@ export default function Dashboard() {
           writeEnabled={writeEnabled}
         />
       );
-      case 3: return <TrendsTab {...tabProps} />;
-      case 4: return (
+      case 2: return <TrendsTab {...tabProps} />;
+      case 3: return (
         <InsightsTab
           insights={activeInsights}
           budgets={budgets}
@@ -407,7 +406,7 @@ export default function Dashboard() {
           </div>
         ) : (
           <>
-            {(activeTab === 0 || activeTab === 1) && monthData.length > 0 && (
+            {activeTab === 0 && monthData.length > 0 && (
               <TopCategories monthData={monthData} prevMonthData={prevMonthData} budgets={budgets} />
             )}
             <div
