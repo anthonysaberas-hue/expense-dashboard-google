@@ -486,20 +486,14 @@ export default function OverviewTab({
                         <EditableCell value={e.date} field="date" type="date" onSave={(f, v) => handleCellSave(e, f, v)} disabled={!writeEnabled} />
                       </td>
                       <td style={{ textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                        <EditableCell value={e.amount} field="amount" type="number" onSave={(f, v) => handleCellSave(e, f, v)} disabled={!writeEnabled} />
                         {(() => {
                           const hasSplits = splits.some((s) => s.expenseId === e.id && s.status !== "forgiven");
                           return hasSplits ? (
-                            <>
-                              <span style={{ fontSize: 10, color: "var(--text-muted)", opacity: 0.5, display: "block", textAlign: "right", textDecoration: "line-through" }}>
-                                {formatCurrency(e.amount)}
-                              </span>
-                              <span style={{ fontSize: 15, fontWeight: 700, color: "var(--green)", display: "block", textAlign: "right" }}>
-                                {formatCurrency(e.netAmount ?? e.amount)}
-                              </span>
-                            </>
-                          ) : (
-                            <EditableCell value={e.amount} field="amount" type="number" onSave={(f, v) => handleCellSave(e, f, v)} disabled={!writeEnabled} />
-                          );
+                            <span style={{ fontSize: 10, color: "var(--green)", display: "block", textAlign: "right", fontWeight: 700 }}>
+                              net {formatCurrency(e.netAmount ?? e.amount)}
+                            </span>
+                          ) : null;
                         })()}
                       </td>
                       <td>
