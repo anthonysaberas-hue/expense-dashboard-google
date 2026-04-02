@@ -1019,6 +1019,12 @@ body {
 }
 .editable-cell:hover { border-color: var(--green); color: var(--green); }
 .editable-cell-disabled { cursor: default; }
+.editable-placeholder {
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 11px;
+  opacity: 0.6;
+}
 .editable-saving { opacity: 0.6; }
 .editable-saved { border-color: var(--green); }
 .editable-check {

@@ -82,9 +82,9 @@ export default function EditableCell({
       role="button"
       tabIndex={0}
       onKeyDown={(e) => e.key === "Enter" && setEditing(true)}
-      aria-label={`${field}: ${value ?? "empty"}. Click to edit.`}
+      aria-label={`${field}: ${value || "empty"}. Click to edit.`}
     >
-      {value ?? "—"}
+      {value || <span className="editable-placeholder">Add {field}…</span>}
       {saved && <span className="editable-check" aria-hidden="true">✓</span>}
     </span>
   );
