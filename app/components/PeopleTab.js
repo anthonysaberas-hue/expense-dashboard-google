@@ -143,7 +143,35 @@ export default function PeopleTab({
                             <td style={{ fontWeight: 500 }}>{exp?.vendor || exp?.name || sp.expenseId}</td>
                             <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{formatCurrency(sp.share)}</td>
                             <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: sp.repaid > 0 ? "var(--green)" : "var(--text-muted)" }}>
-                              {formatCurrency(sp.repaid)}
+                              {writeEnabled && sp.status !== "forgiven" ? (
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  max={sp.share}
+                                  value={paymentInputs[sp.splitId] ?? sp.repaid}
+                                  onChange={(e) => setPaymentInputs((prev) => ({ ...prev, [sp.splitId]: e.target.value }))}
+                                  onBlur={() => {
+                                    const val = parseFloat(paymentInputs[sp.splitId]);
+                                    if (!isNaN(val) && val !== sp.repaid) {
+                                      const capped = Math.min(Math.max(val, 0), sp.share);
+                                      const newStatus = capped >= sp.share ? "settled" : capped > 0 ? "partial" : "pending";
+                                      onRecordPayment?.(sp.splitId, capped, newStatus);
+                                    }
+                                    setPaymentInputs((prev) => { const n = { ...prev }; delete n[sp.splitId]; return n; });
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") e.target.blur();
+                                    if (e.key === "Escape") {
+                                      setPaymentInputs((prev) => { const n = { ...prev }; delete n[sp.splitId]; return n; });
+                                    }
+                                  }}
+                                  className="search-input"
+                                  style={{ width: 70, minHeight: 28, padding: "2px 6px", fontSize: 11, textAlign: "right" }}
+                                />
+                              ) : (
+                                formatCurrency(sp.repaid)
+                              )}
                             </td>
                             <td>
                               <span className={`people-status people-status-${sp.status}`}>
@@ -151,49 +179,38 @@ export default function PeopleTab({
                               </span>
                             </td>
                             <td style={{ textAlign: "right" }}>
-                              {writeEnabled && sp.status !== "settled" && sp.status !== "forgiven" && remaining > 0 && (
-                                <div style={{ display: "flex", gap: 4, alignItems: "center", justifyContent: "flex-end" }}>
-                                  <input
-                                    type="number"
-                                    step="0.01"
-                                    min="0"
-                                    max={remaining}
-                                    placeholder={remaining.toFixed(0)}
-                                    value={paymentInputs[sp.splitId] || ""}
-                                    onChange={(e) => setPaymentInputs((prev) => ({ ...prev, [sp.splitId]: e.target.value }))}
-                                    className="search-input"
-                                    style={{ width: 70, minHeight: 30, padding: "2px 6px", fontSize: 11 }}
-                                    onKeyDown={(e) => {
-                                      if (e.key === "Enter") {
-                                        const amt = parseFloat(paymentInputs[sp.splitId]) || remaining;
-                                        const newRepaid = Math.min(sp.repaid + amt, sp.share);
-                                        const newStatus = newRepaid >= sp.share ? "settled" : "partial";
-                                        handleRecordPayment(p.person, sp.splitId, newRepaid).then(() => {
-                                          onRecordPayment?.(sp.splitId, newRepaid, newStatus);
-                                        });
-                                      }
-                                    }}
-                                  />
-                                  <button
-                                    className="btn-ghost"
-                                    style={{ fontSize: 10, padding: "3px 8px", minHeight: 30 }}
-                                    onClick={() => {
-                                      const amt = parseFloat(paymentInputs[sp.splitId]) || remaining;
-                                      const newRepaid = Math.min(sp.repaid + amt, sp.share);
-                                      const newStatus = newRepaid >= sp.share ? "settled" : "partial";
-                                      onRecordPayment?.(sp.splitId, newRepaid, newStatus);
-                                    }}
-                                  >
-                                    Pay
-                                  </button>
-                                  <button
-                                    className="btn-ghost"
-                                    style={{ fontSize: 10, padding: "3px 8px", minHeight: 30, color: "var(--amber)" }}
-                                    onClick={() => handleForgive(sp)}
-                                    title="Forgive remaining and create Relationship expense"
-                                  >
-                                    Forgive
-                                  </button>
+                              {writeEnabled && (
+                                <div style={{ display: "flex", gap: 4, alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap" }}>
+                                  {sp.status !== "forgiven" && remaining > 0 && (
+                                    <>
+                                      <button
+                                        className="btn-ghost"
+                                        style={{ fontSize: 10, padding: "3px 8px", minHeight: 28 }}
+                                        onClick={() => onRecordPayment?.(sp.splitId, sp.share, "settled")}
+                                        title="Mark fully paid"
+                                      >
+                                        Settle
+                                      </button>
+                                      <button
+                                        className="btn-ghost"
+                                        style={{ fontSize: 10, padding: "3px 8px", minHeight: 28, color: "var(--amber)" }}
+                                        onClick={() => handleForgive(sp)}
+                                        title="Forgive remaining"
+                                      >
+                                        Forgive
+                                      </button>
+                                    </>
+                                  )}
+                                  {(sp.status === "settled" || sp.status === "partial") && (
+                                    <button
+                                      className="btn-ghost"
+                                      style={{ fontSize: 10, padding: "3px 8px", minHeight: 28, color: "var(--red)" }}
+                                      onClick={() => onRecordPayment?.(sp.splitId, 0, "pending")}
+                                      title="Reset to unpaid"
+                                    >
+                                      Reset
+                                    </button>
+                                  )}
                                 </div>
                               )}
                             </td>

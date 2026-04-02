@@ -48,11 +48,15 @@ export default function CategoryManager({ monthData = [], onBatchUpdate }) {
   const [showEmojiPicker, setShowEmojiPicker] = useState(null);
   const [mergeSource, setMergeSource] = useState(null);
   const [mergeTarget, setMergeTarget] = useState("");
+  const [showAddInput, setShowAddInput] = useState(false);
+  const [newCatName, setNewCatName] = useState("");
 
   const categories = useMemo(() => {
     const cats = new Set(monthData.map((e) => e.category));
+    // Also include custom categories from localStorage that may have no transactions
+    Object.keys(customs).forEach((c) => cats.add(c));
     return [...cats].sort();
-  }, [monthData]);
+  }, [monthData, customs]);
 
   const updateCustom = (cat, updates) => {
     const next = { ...customs, [cat]: { ...(customs[cat] || {}), ...updates } };
@@ -98,13 +102,58 @@ export default function CategoryManager({ monthData = [], onBatchUpdate }) {
     setMergeTarget("");
   };
 
-  if (categories.length === 0) return null;
+  const handleAddCategory = () => {
+    const name = newCatName.trim();
+    if (!name) return;
+    updateCustom(name, { emoji: "📦", color: "#888780" });
+    setNewCatName("");
+    setShowAddInput(false);
+  };
+
+  const handleDeleteCategory = async (cat) => {
+    const count = monthData.filter((e) => e.category === cat).length;
+    const msg = count > 0
+      ? `Delete "${cat}"? ${count} transactions will become "Uncategorized".`
+      : `Delete "${cat}"?`;
+    if (!confirm(msg)) return;
+    if (count > 0 && onBatchUpdate) {
+      await onBatchUpdate(cat, "Uncategorized");
+    }
+    const next = { ...customs };
+    delete next[cat];
+    setCustoms(next);
+    saveCustomCategories(next);
+  };
 
   return (
     <div className="card" style={{ marginTop: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
         <p className="section-label" style={{ margin: 0 }}>Category Manager</p>
+        <button
+          className="btn-ghost"
+          onClick={() => setShowAddInput((v) => !v)}
+          style={{ fontSize: 12 }}
+        >
+          + Add category
+        </button>
       </div>
+
+      {showAddInput && (
+        <div style={{ display: "flex", gap: 8, marginBottom: 12, padding: "10px 12px", background: "var(--bg)", borderRadius: "var(--radius-sm)", border: "1px solid var(--border)" }}>
+          <input
+            type="text"
+            placeholder="Category name"
+            value={newCatName}
+            onChange={(e) => setNewCatName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleAddCategory()}
+            className="search-input"
+            style={{ flex: 1 }}
+            autoFocus
+          />
+          <button onClick={handleAddCategory} className="btn-primary" style={{ padding: "6px 14px", fontSize: 12 }}>Add</button>
+          <button onClick={() => { setShowAddInput(false); setNewCatName(""); }} className="btn-ghost" style={{ fontSize: 12 }}>Cancel</button>
+        </div>
+      )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
         {categories.map((cat) => {
@@ -196,6 +245,16 @@ export default function CategoryManager({ monthData = [], onBatchUpdate }) {
                 title="Merge into another category"
               >
                 ↗
+              </button>
+
+              {/* Delete button */}
+              <button
+                className="catmgr-action-btn"
+                onClick={() => handleDeleteCategory(cat)}
+                title="Delete category"
+                style={{ color: "var(--red)" }}
+              >
+                ×
               </button>
             </div>
           );
