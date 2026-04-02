@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 
 const DAYS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 const MONTH_NAMES = [
@@ -13,31 +13,45 @@ function getDaysInMonth(year, month) {
 
 function getFirstDayOfWeek(year, month) {
   const d = new Date(year, month, 1).getDay();
-  return d === 0 ? 6 : d - 1; // Monday-based
+  return d === 0 ? 6 : d - 1;
 }
 
 function fmt(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-function fmtDisplay(d) {
+function fmtShort(d) {
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+  return `${months[d.getMonth()]} ${d.getDate()}`;
 }
 
-export default function DateRangePicker({ startDate, endDate, onChange, minDate, maxDate }) {
+function getPresets() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  return [
+    { label: "This month", start: new Date(y, m, 1), end: new Date(y, m + 1, 0) },
+    { label: "Last month", start: new Date(y, m - 1, 1), end: new Date(y, m, 0) },
+    { label: "Last 30 days", start: new Date(y, m, now.getDate() - 30), end: now },
+    { label: "This quarter", start: new Date(y, Math.floor(m / 3) * 3, 1), end: new Date(y, Math.floor(m / 3) * 3 + 3, 0) },
+    { label: "Last 6 months", start: new Date(y, m - 5, 1), end: new Date(y, m + 1, 0) },
+    { label: "This year", start: new Date(y, 0, 1), end: new Date(y, 11, 31) },
+    { label: "All time", start: new Date(2020, 0, 1), end: new Date(y + 1, 0, 0) },
+  ];
+}
+
+export default function DateRangePicker({ startDate, endDate, onChange }) {
   const [open, setOpen] = useState(false);
   const [viewYear, setViewYear] = useState(() => (startDate ? startDate.getFullYear() : new Date().getFullYear()));
   const [viewMonth, setViewMonth] = useState(() => (startDate ? startDate.getMonth() : new Date().getMonth()));
-  const [selecting, setSelecting] = useState(null); // null | { start: Date }
+  const [pickStart, setPickStart] = useState(null);
   const [hoverDate, setHoverDate] = useState(null);
   const ref = useRef(null);
 
-  // Close on outside click
   useEffect(() => {
     if (!open) return;
     const handler = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+      if (ref.current && !ref.current.contains(e.target)) { setOpen(false); setPickStart(null); }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -57,39 +71,29 @@ export default function DateRangePicker({ startDate, endDate, onChange, minDate,
 
   const handleDayClick = (day) => {
     const clicked = new Date(viewYear, viewMonth, day);
-    if (!selecting) {
-      setSelecting({ start: clicked });
+    if (!pickStart) {
+      setPickStart(clicked);
     } else {
-      let s = selecting.start, e = clicked;
+      let s = pickStart, e = clicked;
       if (e < s) [s, e] = [e, s];
       onChange(s, e);
-      setSelecting(null);
+      setPickStart(null);
       setOpen(false);
     }
   };
 
-  const handleCancel = () => {
-    setSelecting(null);
+  const handlePreset = (preset) => {
+    onChange(preset.start, preset.end);
+    setPickStart(null);
     setOpen(false);
   };
 
-  const handleApply = () => {
-    if (selecting) {
-      const hover = hoverDate || selecting.start;
-      let s = selecting.start, e = hover;
-      if (e < s) [s, e] = [e, s];
-      onChange(s, e);
-      setSelecting(null);
-    }
-    setOpen(false);
-  };
-
-  // Determine effective range for highlighting
+  // Range highlighting
   let rangeStart = startDate, rangeEnd = endDate;
-  if (selecting) {
-    const hover = hoverDate || selecting.start;
-    rangeStart = selecting.start < hover ? selecting.start : hover;
-    rangeEnd = selecting.start < hover ? hover : selecting.start;
+  if (pickStart) {
+    const hover = hoverDate || pickStart;
+    rangeStart = pickStart < hover ? pickStart : hover;
+    rangeEnd = pickStart < hover ? hover : pickStart;
   }
 
   const isInRange = (day) => {
@@ -101,8 +105,8 @@ export default function DateRangePicker({ startDate, endDate, onChange, minDate,
   const isEnd = (day) => rangeEnd && fmt(new Date(viewYear, viewMonth, day)) === fmt(rangeEnd);
 
   const displayText = startDate && endDate
-    ? `${fmtDisplay(startDate)} – ${fmtDisplay(endDate)}`
-    : "Select date range";
+    ? `${fmtShort(startDate)} – ${fmtShort(endDate)}, ${endDate.getFullYear()}`
+    : "Select dates";
 
   return (
     <div ref={ref} style={{ position: "relative", display: "inline-block" }}>
@@ -131,48 +135,64 @@ export default function DateRangePicker({ startDate, endDate, onChange, minDate,
 
       {open && (
         <div className="date-range-dropdown">
-          {/* Month nav */}
-          <div className="date-range-month-nav">
-            <button onClick={prevMonth} className="date-range-nav-btn" aria-label="Previous month">&lt;</button>
-            <span style={{ fontWeight: 600, fontSize: 14 }}>{MONTH_NAMES[viewMonth]} {viewYear}</span>
-            <button onClick={nextMonth} className="date-range-nav-btn" aria-label="Next month">&gt;</button>
-          </div>
-
-          {/* Day headers */}
-          <div className="date-range-grid">
-            {DAYS.map((d) => (
-              <div key={d} className="date-range-day-header">{d}</div>
-            ))}
-
-            {/* Empty cells for offset */}
-            {Array.from({ length: firstDay }).map((_, i) => (
-              <div key={`empty-${i}`} />
-            ))}
-
-            {/* Days */}
-            {Array.from({ length: daysInMonth }).map((_, i) => {
-              const day = i + 1;
-              const inRange = isInRange(day);
-              const start = isStart(day);
-              const end = isEnd(day);
-              return (
+          <div className="date-range-layout">
+            {/* Presets sidebar */}
+            <div className="date-range-presets">
+              {getPresets().map((p) => (
                 <button
-                  key={day}
-                  className={`date-range-day${inRange ? " in-range" : ""}${start ? " range-start" : ""}${end ? " range-end" : ""}`}
-                  onClick={() => handleDayClick(day)}
-                  onMouseEnter={() => selecting && setHoverDate(new Date(viewYear, viewMonth, day))}
-                  aria-label={`${MONTH_NAMES[viewMonth]} ${day}`}
+                  key={p.label}
+                  className="date-range-preset-btn"
+                  onClick={() => handlePreset(p)}
                 >
-                  {day}
+                  {p.label}
                 </button>
-              );
-            })}
-          </div>
+              ))}
+            </div>
 
-          {/* Actions */}
-          <div className="date-range-actions">
-            <button onClick={handleCancel} className="btn-ghost" style={{ padding: "6px 16px", minHeight: 36 }}>Cancel</button>
-            <button onClick={handleApply} className="btn-primary" style={{ padding: "6px 16px", minHeight: 36 }}>Apply</button>
+            {/* Calendar */}
+            <div className="date-range-calendar">
+              <div className="date-range-month-nav">
+                <button onClick={prevMonth} className="date-range-nav-btn" aria-label="Previous month">&lt;</button>
+                <span style={{ fontWeight: 600, fontSize: 14 }}>{MONTH_NAMES[viewMonth]} {viewYear}</span>
+                <button onClick={nextMonth} className="date-range-nav-btn" aria-label="Next month">&gt;</button>
+              </div>
+
+              <div className="date-range-grid">
+                {DAYS.map((d) => (
+                  <div key={d} className="date-range-day-header">{d}</div>
+                ))}
+                {Array.from({ length: firstDay }).map((_, i) => (
+                  <div key={`empty-${i}`} />
+                ))}
+                {Array.from({ length: daysInMonth }).map((_, i) => {
+                  const day = i + 1;
+                  const inRange = isInRange(day);
+                  const start = isStart(day);
+                  const end = isEnd(day);
+                  return (
+                    <button
+                      key={day}
+                      className={`date-range-day${inRange ? " in-range" : ""}${start ? " range-start" : ""}${end ? " range-end" : ""}`}
+                      onClick={() => handleDayClick(day)}
+                      onMouseEnter={() => pickStart && setHoverDate(new Date(viewYear, viewMonth, day))}
+                      aria-label={`${MONTH_NAMES[viewMonth]} ${day}`}
+                    >
+                      {day}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Status + actions */}
+              <div className="date-range-footer">
+                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                  {pickStart ? `From ${fmtShort(pickStart)} → pick end date` : "Click a start date"}
+                </span>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button onClick={() => { setPickStart(null); setOpen(false); }} className="btn-ghost" style={{ padding: "4px 12px", minHeight: 32, fontSize: 12 }}>Cancel</button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
