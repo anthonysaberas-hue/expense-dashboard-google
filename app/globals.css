@@ -744,16 +744,15 @@ body {
 
 .date-range-dropdown {
   position: fixed;
-  top: 50%;
+  top: 80px;
   left: 50%;
-  transform: translate(-50%, -50%);
+  transform: translateX(-50%);
   z-index: 300;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   box-shadow: 0 12px 40px rgba(0,0,0,0.18);
-  animation: slide-up 0.15s ease-out;
-  max-height: 90vh;
+  max-height: calc(100vh - 100px);
   overflow-y: auto;
 }
 .date-range-layout {
