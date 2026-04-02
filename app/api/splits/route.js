@@ -3,7 +3,6 @@ import {
   addSplit,
   updateSplit,
   deleteSplit,
-  appendRow,
   isWriteConfigured,
 } from "../../lib/sheets";
 
@@ -38,29 +37,11 @@ export async function PATCH(request) {
       return NextResponse.json({ error: "Missing splitId" }, { status: 400 });
     }
 
-    // Forgive action: update split status + create Relationship expense
+    // Forgive action: just mark the split as forgiven
+    // The forgiven amount is tracked in the split itself (share - repaid = forgiven portion)
+    // No separate expense row created — avoids sync issues if deleted
     if (action === "forgive") {
-      const forgiveAmount = Number(fields.forgiveAmount) || 0;
-      const person = fields.person || "Unknown";
-      const expenseRef = fields.expenseRef || "";
-
-      // 1. Update split status to forgiven
       await updateSplit(splitId, { Status: "forgiven", Repaid: fields.currentRepaid || 0 });
-
-      // 2. Create a new expense in the Budget tab with category "Relationship"
-      if (forgiveAmount > 0) {
-        await appendRow({
-          Name: `Forgiven for ${person}`,
-          Date: new Date().toISOString().split("T")[0],
-          Amount: forgiveAmount,
-          Category: "Relationship",
-          Vendor: person,
-          Source: "Dashboard",
-          Notes: `Absorbed from: ${expenseRef}`,
-          Repaid: 0,
-        });
-      }
-
       return NextResponse.json({ ok: true });
     }
 

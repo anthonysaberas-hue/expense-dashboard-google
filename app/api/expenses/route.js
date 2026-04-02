@@ -58,14 +58,26 @@ export async function GET() {
     }));
 
     // Pre-compute netAmount on each expense
-    // net = amount - max(shares, repaid) — shows your share, but if someone
-    // overpays (repaid > share), the extra reduces your cost further
+    // Active splits: subtract share (stable — your portion doesn't change as they pay)
+    // Forgiven splits: subtract only repaid (forgiven portion = your cost)
+    // Overpaid: if repaid > share, subtract repaid (extra goes to you)
     for (const exp of expenses) {
-      const expSplits = normalizedSplits.filter((s) => s.expenseId === exp.id && s.status !== "forgiven");
+      const expSplits = normalizedSplits.filter((s) => s.expenseId === exp.id);
       if (expSplits.length > 0) {
-        const totalShares = expSplits.reduce((s, sp) => s + sp.share, 0);
-        const totalRepaid = expSplits.reduce((s, sp) => s + sp.repaid, 0);
-        exp.netAmount = exp.amount - Math.max(totalShares, totalRepaid);
+        let totalDeduction = 0;
+        for (const sp of expSplits) {
+          if (sp.status === "forgiven") {
+            // Forgiven: only what they actually repaid reduces your cost
+            totalDeduction += sp.repaid;
+          } else if (sp.repaid > sp.share) {
+            // Overpaid: full repaid amount (extra goes to you)
+            totalDeduction += sp.repaid;
+          } else {
+            // Active/pending/partial/settled: subtract their share (stable)
+            totalDeduction += sp.share;
+          }
+        }
+        exp.netAmount = exp.amount - totalDeduction;
       } else {
         exp.netAmount = exp.amount - exp.repaid;
       }

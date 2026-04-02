@@ -147,7 +147,7 @@ export default function PeopleTab({
                             <td style={{ fontWeight: 500 }}>{exp?.vendor || exp?.name || sp.expenseId}</td>
                             <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{formatCurrency(sp.share)}</td>
                             <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: sp.repaid > 0 ? "var(--green)" : "var(--text-muted)" }}>
-                              {writeEnabled && sp.status !== "forgiven" ? (
+                              {writeEnabled ? (
                                 <input
                                   type="number"
                                   step="0.01"
@@ -184,7 +184,8 @@ export default function PeopleTab({
                             <td style={{ textAlign: "right" }}>
                               {writeEnabled && (
                                 <div style={{ display: "flex", gap: 4, alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap" }}>
-                                  {sp.status !== "forgiven" && remaining > 0 && (
+                                  {/* Settle + Forgive: show when there's unpaid balance and not already forgiven */}
+                                  {remaining > 0 && sp.status !== "forgiven" && (
                                     <>
                                       <button
                                         className="btn-ghost"
@@ -204,7 +205,8 @@ export default function PeopleTab({
                                       </button>
                                     </>
                                   )}
-                                  {(sp.status === "settled" || sp.status === "partial") && (
+                                  {/* Reset: show on ANY non-pending status (settled, partial, forgiven, overpaid) */}
+                                  {sp.status !== "pending" && (
                                     <button
                                       className="btn-ghost"
                                       style={{ fontSize: 10, padding: "3px 8px", minHeight: 28, color: "var(--red)" }}
