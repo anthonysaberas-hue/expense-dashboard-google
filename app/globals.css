@@ -1367,6 +1367,7 @@ body {
 }
 .cat-bar-row:hover { background: var(--surface-hover); cursor: pointer; }
 .cat-bar-open { background: var(--surface-hover); }
+.cat-bar-excluded { opacity: 0.5; }
 .cat-bar-detail {
   padding: 12px 16px;
   margin: 0 0 6px;

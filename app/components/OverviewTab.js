@@ -75,7 +75,7 @@ function DonutChart({ data }) {
   );
 }
 
-function CategoryBreakdown({ catTotals, total, monthData, prevCatTotals, budgets, byMonth, selectedMonth, sparkMonths }) {
+function CategoryBreakdown({ catTotals, total, monthData, prevCatTotals, budgets, byMonth, selectedMonth, sparkMonths, excludedCats, toggleCat }) {
   const [expanded, setExpanded] = useState(null);
   const max = Math.max(...catTotals.map((d) => d.amount), 1);
 
@@ -95,32 +95,48 @@ function CategoryBreakdown({ catTotals, total, monthData, prevCatTotals, budgets
           (byMonth[m] || []).filter((e) => e.category === d.category).reduce((s, e) => s + getNetAmount(e), 0)
         );
 
+        const isExcluded = excludedCats?.has(d.category);
+
         return (
           <div key={d.category}>
             <div
-              className={`cat-bar-row${isOpen ? " cat-bar-open" : ""}`}
-              onClick={() => setExpanded(isOpen ? null : d.category)}
+              className={`cat-bar-row${isOpen ? " cat-bar-open" : ""}${isExcluded ? " cat-bar-excluded" : ""}`}
               role="button"
               tabIndex={0}
-              onKeyDown={(e) => e.key === "Enter" && setExpanded(isOpen ? null : d.category)}
               aria-expanded={isOpen}
             >
-              <span className="mom-bar-label" style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                <span style={{ width: 8, height: 8, borderRadius: 2, background: getCatColor(d.category), flexShrink: 0 }} />
+              {/* Toggle dot — click to exclude/include */}
+              <button
+                onClick={(e) => { e.stopPropagation(); toggleCat?.(d.category); }}
+                title={isExcluded ? `Include ${d.category}` : `Exclude ${d.category} from totals`}
+                style={{
+                  width: 16, height: 16, borderRadius: 4, flexShrink: 0, cursor: "pointer",
+                  background: isExcluded ? "var(--border)" : getCatColor(d.category),
+                  border: isExcluded ? "2px dashed var(--text-muted)" : "none",
+                  padding: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                }}
+              >
+                {isExcluded && <span style={{ fontSize: 8, color: "var(--text-muted)" }}>✕</span>}
+              </button>
+              <span
+                className="mom-bar-label"
+                style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", textDecoration: isExcluded ? "line-through" : "none", opacity: isExcluded ? 0.4 : 1 }}
+                onClick={() => setExpanded(isOpen ? null : d.category)}
+              >
                 {d.category}
               </span>
-              <div className="mom-bar-track">
+              <div className="mom-bar-track" onClick={() => setExpanded(isOpen ? null : d.category)} style={{ cursor: "pointer", opacity: isExcluded ? 0.3 : 1 }}>
                 <div
                   className="mom-bar-fill"
                   style={{
                     width: `${(d.amount / max) * 100}%`,
-                    background: getCatColor(d.category),
+                    background: isExcluded ? "var(--text-muted)" : getCatColor(d.category),
                     minWidth: d.amount > 0 ? 3 : 0,
                   }}
                 />
                 <span className="mom-bar-val">{formatCurrency(d.amount)}</span>
               </div>
-              <span className={`chevron${isOpen ? " open" : ""}`} style={{ marginLeft: 4, fontSize: 10 }} aria-hidden="true">▼</span>
+              <span className={`chevron${isOpen ? " open" : ""}`} onClick={() => setExpanded(isOpen ? null : d.category)} style={{ marginLeft: 4, fontSize: 10, cursor: "pointer" }} aria-hidden="true">▼</span>
             </div>
 
             {isOpen && (
@@ -230,13 +246,26 @@ export default function OverviewTab({
   onSplitMonths,
   budgets = {},
 }) {
-  const total = useMemo(() => monthData.reduce((s, e) => s + getNetAmount(e), 0), [monthData]);
+  const [excludedCats, setExcludedCats] = useState(new Set());
+  const toggleCat = (cat) => setExcludedCats((prev) => {
+    const next = new Set(prev);
+    if (next.has(cat)) next.delete(cat); else next.add(cat);
+    return next;
+  });
+
+  // Data filtered by excluded categories — used by KPIs, donut, summary
+  const activeData = useMemo(() =>
+    excludedCats.size > 0 ? monthData.filter((e) => !excludedCats.has(e.category)) : monthData,
+    [monthData, excludedCats]
+  );
+
+  const total = useMemo(() => activeData.reduce((s, e) => s + getNetAmount(e), 0), [activeData]);
   const currentIdx = monthKeys.indexOf(selectedMonth);
   const prevMonth = currentIdx > 0 ? monthKeys[currentIdx - 1] : null;
   const prevData = prevMonth ? (byMonth[prevMonth] || []) : [];
-  const prevTotal = prevData.reduce((s, e) => s + getNetAmount(e), 0);
+  const prevTotal = prevData.filter((e) => !excludedCats.has(e.category)).reduce((s, e) => s + getNetAmount(e), 0);
 
-  const uniqueDays = useMemo(() => new Set(monthData.map((e) => e.date)).size, [monthData]);
+  const uniqueDays = useMemo(() => new Set(activeData.map((e) => e.date)).size, [activeData]);
   const dailyAvg = uniqueDays > 0 ? total / uniqueDays : 0;
 
   const catTotals = useMemo(() => {
@@ -261,12 +290,12 @@ export default function OverviewTab({
 
   const vendorTotals = useMemo(() => {
     const vt = {};
-    monthData.forEach((e) => {
+    activeData.forEach((e) => {
       const v = e.vendor || e.name;
       if (v) vt[v] = (vt[v] || 0) + getNetAmount(e);
     });
     return Object.entries(vt).sort((a, b) => b[1] - a[1]);
-  }, [monthData]);
+  }, [activeData]);
 
   const topVendor = vendorTotals[0];
   const topCat = catTotals[0];
@@ -401,10 +430,15 @@ export default function OverviewTab({
       <div className="charts-row" style={{ marginBottom: 16 }}>
         <div className="card">
           <p className="section-label">By category</p>
-          <DonutChart data={catTotals} />
+          <DonutChart data={catTotals.filter((d) => !excludedCats.has(d.category))} />
         </div>
         <div className="card">
           <p className="section-label">Category breakdown</p>
+          {excludedCats.size > 0 && (
+            <div style={{ fontSize: 11, color: "var(--amber)", marginBottom: 8, fontWeight: 600 }}>
+              {excludedCats.size} category excluded — <button onClick={() => setExcludedCats(new Set())} style={{ background: "none", border: "none", color: "var(--green)", cursor: "pointer", fontFamily: "inherit", fontSize: 11, fontWeight: 600, padding: 0, textDecoration: "underline" }}>show all</button>
+            </div>
+          )}
           <CategoryBreakdown
             catTotals={catTotals}
             total={total}
@@ -414,12 +448,14 @@ export default function OverviewTab({
             byMonth={byMonth}
             selectedMonth={selectedMonth}
             sparkMonths={sparkMonths}
+            excludedCats={excludedCats}
+            toggleCat={toggleCat}
           />
         </div>
       </div>
 
       {/* ── Summary ── */}
-      <SummaryPanel monthData={monthData} />
+      <SummaryPanel monthData={activeData} />
 
       {/* ── Full Transactions Table ── */}
       <div>
