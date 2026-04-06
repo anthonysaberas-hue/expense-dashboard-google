@@ -247,17 +247,25 @@ export default function OverviewTab({
   budgets = {},
 }) {
   const [excludedCats, setExcludedCats] = useState(new Set());
+  const [excludedIds, setExcludedIds] = useState(new Set());
   const toggleCat = (cat) => setExcludedCats((prev) => {
     const next = new Set(prev);
     if (next.has(cat)) next.delete(cat); else next.add(cat);
     return next;
   });
+  const toggleId = (id) => setExcludedIds((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
 
-  // Data filtered by excluded categories — used by KPIs, donut, summary
-  const activeData = useMemo(() =>
-    excludedCats.size > 0 ? monthData.filter((e) => !excludedCats.has(e.category)) : monthData,
-    [monthData, excludedCats]
-  );
+  // Data filtered by excluded categories + excluded IDs — used by KPIs, donut, summary
+  const activeData = useMemo(() => {
+    let data = monthData;
+    if (excludedCats.size > 0) data = data.filter((e) => !excludedCats.has(e.category));
+    if (excludedIds.size > 0) data = data.filter((e) => !excludedIds.has(e.id));
+    return data;
+  }, [monthData, excludedCats, excludedIds]);
 
   const total = useMemo(() => activeData.reduce((s, e) => s + getNetAmount(e), 0), [activeData]);
   const currentIdx = monthKeys.indexOf(selectedMonth);
@@ -369,6 +377,7 @@ export default function OverviewTab({
   }, [onDelete, onAdd]);
 
   const txCols = [
+    { key: "_toggle", label: "" },
     ...(writeEnabled ? [{ key: "_delete", label: "" }] : []),
     { key: "vendor", label: "Vendor" },
     { key: "date", label: "Date" },
@@ -434,9 +443,12 @@ export default function OverviewTab({
         </div>
         <div className="card">
           <p className="section-label">Category breakdown</p>
-          {excludedCats.size > 0 && (
+          {(excludedCats.size > 0 || excludedIds.size > 0) && (
             <div style={{ fontSize: 11, color: "var(--amber)", marginBottom: 8, fontWeight: 600 }}>
-              {excludedCats.size} category excluded — <button onClick={() => setExcludedCats(new Set())} style={{ background: "none", border: "none", color: "var(--green)", cursor: "pointer", fontFamily: "inherit", fontSize: 11, fontWeight: 600, padding: 0, textDecoration: "underline" }}>show all</button>
+              {excludedCats.size > 0 && <span>{excludedCats.size} category</span>}
+              {excludedCats.size > 0 && excludedIds.size > 0 && <span> + </span>}
+              {excludedIds.size > 0 && <span>{excludedIds.size} transaction</span>}
+              {" "}excluded — <button onClick={() => { setExcludedCats(new Set()); setExcludedIds(new Set()); }} style={{ background: "none", border: "none", color: "var(--green)", cursor: "pointer", fontFamily: "inherit", fontSize: 11, fontWeight: 600, padding: 0, textDecoration: "underline" }}>show all</button>
             </div>
           )}
           <CategoryBreakdown
@@ -498,16 +510,16 @@ export default function OverviewTab({
                   {txCols.map(({ key, label }) => (
                     <th
                       key={key}
-                      onClick={key !== "_delete" ? () => handleSort(key) : undefined}
+                      onClick={key !== "_delete" && key !== "_toggle" ? () => handleSort(key) : undefined}
                       className={sortKey === key ? "active-sort" : ""}
                       style={{
                         textAlign: key === "amount" || key === "repaid" ? "right" : "left",
-                        width: key === "_delete" ? 40 : key === "notes" ? "20%" : undefined,
-                        cursor: key === "_delete" ? "default" : "pointer",
+                        width: key === "_delete" ? 40 : key === "_toggle" ? 32 : key === "notes" ? "20%" : undefined,
+                        cursor: key === "_delete" || key === "_toggle" ? "default" : "pointer",
                       }}
                       aria-sort={sortKey === key ? (sortDir === "asc" ? "ascending" : "descending") : undefined}
                     >
-                      {label} {key !== "_delete" && (sortKey === key ? (sortDir === "asc" ? "↑" : "↓") : "↕")}
+                      {label} {key !== "_delete" && key !== "_toggle" && (sortKey === key ? (sortDir === "asc" ? "↑" : "↓") : "↕")}
                     </th>
                   ))}
                 </tr>
@@ -517,7 +529,16 @@ export default function OverviewTab({
                   <tr><td colSpan={txCols.length} style={{ padding: "2rem", textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>No transactions match your filter.</td></tr>
                 ) : (
                   filtered.map((e, i) => (
-                    <tr key={e.id || i}>
+                    <tr key={e.id || i} style={excludedIds.has(e.id) ? { opacity: 0.35 } : {}}>
+                      <td style={{ width: 32, textAlign: "center", padding: "4px" }}>
+                        <input
+                          type="checkbox"
+                          checked={!excludedIds.has(e.id)}
+                          onChange={() => toggleId(e.id)}
+                          title={excludedIds.has(e.id) ? "Include in totals" : "Exclude from totals"}
+                          style={{ width: 16, height: 16, cursor: "pointer", accentColor: "var(--green)" }}
+                        />
+                      </td>
                       {writeEnabled && (
                         <td style={{ width: 40, textAlign: "center" }}>
                           <button onClick={() => handleDelete(e)} className="delete-row-btn" aria-label={`Delete ${e.vendor || e.name}`} title="Delete">×</button>
