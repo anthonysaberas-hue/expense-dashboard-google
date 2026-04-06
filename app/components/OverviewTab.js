@@ -318,7 +318,8 @@ export default function OverviewTab({
       const bv = sortKey === "amount" ? getNetAmount(b) : sortKey === "vendor" ? (b.vendor || b.name || "") : (b.date || "");
       if (av < bv) return sortDir === "asc" ? -1 : 1;
       if (av > bv) return sortDir === "asc" ? 1 : -1;
-      return 0;
+      // Same date: sort by row order (later rows = added later = more recent)
+      return sortDir === "desc" ? (b._order || 0) - (a._order || 0) : (a._order || 0) - (b._order || 0);
     });
 
   const handleCellSave = useCallback(async (expense, field, newValue) => {

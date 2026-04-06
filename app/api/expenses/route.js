@@ -32,6 +32,7 @@ function normalize(row) {
     source: row.Source || "",
     rawSubject: row["Raw Email Subject"] || "",
     repaid: typeof row.Repaid === "number" ? row.Repaid : parseFloat(row.Repaid) || 0,
+    _order: row._rowIndex || 0,
     notes: row.Notes || "",
   };
 }
