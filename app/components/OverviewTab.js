@@ -171,7 +171,7 @@ function CategoryBreakdown({ catTotals, total, monthData, prevCatTotals, budgets
                         <tr key={i}>
                           <td style={{ color: "var(--text-muted)" }}>{t.date}</td>
                           <td>{t.vendor || t.name}</td>
-                          <td style={{ textAlign: "right", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{formatCurrency(t.amount)}</td>
+                          <td style={{ textAlign: "right", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{formatCurrency(getNetAmount(t))}</td>
                         </tr>
                       ))}
                     </tbody>
