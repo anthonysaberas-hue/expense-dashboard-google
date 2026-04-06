@@ -47,9 +47,9 @@ export default function AddExpenseModal({ categories = [], onAdd, onClose }) {
         // Create N installments across consecutive months
         const [startYear, startMonth] = form.date.split("-").map(Number);
         for (let i = 0; i < installmentCount; i++) {
-          let m = startMonth - 1 + i; // 0-based month
-          let y = startYear + Math.floor(m / 12);
-          m = m % 12;
+          const totalMonths = startMonth - 1 + i; // 0-based cumulative
+          const y = startYear + Math.floor(totalMonths / 12);
+          const m = totalMonths % 12;
           const installDate = `${y}-${String(m + 1).padStart(2, "0")}-01`;
           await onAdd({
             date: installDate,
