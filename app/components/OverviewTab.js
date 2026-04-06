@@ -227,6 +227,7 @@ export default function OverviewTab({
   searchRef,
   splits = [],
   onSplit,
+  onSplitMonths,
   budgets = {},
 }) {
   const total = useMemo(() => monthData.reduce((s, e) => s + getNetAmount(e), 0), [monthData]);
@@ -573,6 +574,7 @@ export default function OverviewTab({
             expense={splitExpense}
             existingSplits={splits.filter((s) => s.expenseId === splitExpense.id)}
             onSplit={onSplit}
+            onSplitMonths={onSplitMonths}
             onClose={() => setSplitExpense(null)}
           />
         )}

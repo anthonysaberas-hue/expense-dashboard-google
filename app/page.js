@@ -275,6 +275,30 @@ export default function Dashboard() {
     await fetchExpenses();
   }, [fetchExpenses]);
 
+  const handleSplitMonths = useCallback(async (expense, monthCount) => {
+    const perMonth = Math.round((expense.amount / monthCount) * 100) / 100;
+    const [startYear, startMonth] = (expense.date || "").split("-").map(Number);
+    if (!startYear || !startMonth) throw new Error("Invalid expense date");
+
+    // Create N installment expenses
+    for (let i = 0; i < monthCount; i++) {
+      const totalMonths = startMonth - 1 + i;
+      const y = startYear + Math.floor(totalMonths / 12);
+      const m = totalMonths % 12;
+      const installDate = `${y}-${String(m + 1).padStart(2, "0")}-01`;
+      await handleAddExpense({
+        date: installDate,
+        vendor: expense.vendor || expense.name,
+        name: expense.name || expense.vendor,
+        category: expense.category,
+        amount: perMonth,
+        notes: expense.notes ? `${expense.notes} (${i + 1}/${monthCount})` : `${expense.vendor || expense.name} (${i + 1}/${monthCount})`,
+      });
+    }
+    // Delete the original
+    await handleDeleteExpense(expense.id);
+  }, [handleAddExpense, handleDeleteExpense]);
+
   const handleDeleteSplit = useCallback(async (splitId) => {
     const res = await fetch(`/api/splits?splitId=${encodeURIComponent(splitId)}`, {
       method: "DELETE",
@@ -303,6 +327,7 @@ export default function Dashboard() {
           onDelete={handleDeleteExpense}
           splits={splits}
           onSplit={handleSplitExpense}
+          onSplitMonths={handleSplitMonths}
           budgets={budgets}
         />
       );
