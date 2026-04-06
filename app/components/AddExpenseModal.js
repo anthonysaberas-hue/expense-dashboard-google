@@ -10,6 +10,7 @@ export default function AddExpenseModal({ categories = [], onAdd, onClose }) {
     amount: "",
     repaid: "",
     notes: "",
+    installments: "1",
   });
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -19,6 +20,10 @@ export default function AddExpenseModal({ categories = [], onAdd, onClose }) {
     setError("");
   };
 
+  const installmentCount = Math.max(1, parseInt(form.installments) || 1);
+  const totalAmount = parseFloat(form.amount) || 0;
+  const perMonth = installmentCount > 1 ? (totalAmount / installmentCount) : totalAmount;
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.date) return setError("Date is required");
@@ -27,15 +32,36 @@ export default function AddExpenseModal({ categories = [], onAdd, onClose }) {
 
     setSaving(true);
     try {
-      await onAdd({
-        date: form.date,
-        vendor: form.vendor || form.name,
-        name: form.name || form.vendor,
-        category: form.category,
-        amount: parseFloat(form.amount),
-        repaid: parseFloat(form.repaid) || 0,
-        notes: form.notes,
-      });
+      if (installmentCount <= 1) {
+        // Single expense
+        await onAdd({
+          date: form.date,
+          vendor: form.vendor || form.name,
+          name: form.name || form.vendor,
+          category: form.category,
+          amount: totalAmount,
+          repaid: parseFloat(form.repaid) || 0,
+          notes: form.notes,
+        });
+      } else {
+        // Create N installments across consecutive months
+        const [startYear, startMonth] = form.date.split("-").map(Number);
+        for (let i = 0; i < installmentCount; i++) {
+          let m = startMonth - 1 + i; // 0-based month
+          let y = startYear + Math.floor(m / 12);
+          m = m % 12;
+          const installDate = `${y}-${String(m + 1).padStart(2, "0")}-01`;
+          await onAdd({
+            date: installDate,
+            vendor: form.vendor || form.name,
+            name: form.name || form.vendor,
+            category: form.category,
+            amount: Math.round(perMonth * 100) / 100,
+            repaid: 0,
+            notes: form.notes ? `${form.notes} (${i + 1}/${installmentCount})` : `Installment ${i + 1}/${installmentCount}`,
+          });
+        }
+      }
       onClose();
     } catch (err) {
       setError(err.message || "Failed to add expense");
@@ -75,7 +101,7 @@ export default function AddExpenseModal({ categories = [], onAdd, onClose }) {
           </div>
           <div className="modal-row">
             <div className="modal-field" style={{ flex: 1 }}>
-              <label className="modal-label">Amount *</label>
+              <label className="modal-label">Total Amount *</label>
               <input
                 type="number"
                 step="0.01"
@@ -87,17 +113,27 @@ export default function AddExpenseModal({ categories = [], onAdd, onClose }) {
               />
             </div>
             <div className="modal-field" style={{ flex: 1 }}>
-              <label className="modal-label">Repaid</label>
-              <input
-                type="number"
-                step="0.01"
-                value={form.repaid}
-                onChange={(e) => handleChange("repaid", e.target.value)}
-                className="search-input"
-                placeholder="0.00"
-              />
+              <label className="modal-label">Split across months</label>
+              <select
+                value={form.installments}
+                onChange={(e) => handleChange("installments", e.target.value)}
+                className="filter-select"
+                style={{ width: "100%" }}
+              >
+                <option value="1">No split</option>
+                <option value="2">2 months</option>
+                <option value="3">3 months</option>
+                <option value="4">4 months</option>
+                <option value="6">6 months</option>
+                <option value="12">12 months</option>
+              </select>
             </div>
           </div>
+          {installmentCount > 1 && totalAmount > 0 && (
+            <div style={{ fontSize: 12, color: "var(--green)", fontWeight: 600, marginBottom: 10, padding: "8px 12px", background: "var(--green-light)", borderRadius: 6 }}>
+              ${perMonth.toFixed(2)}/month × {installmentCount} months = ${totalAmount.toFixed(2)} total
+            </div>
+          )}
           <div className="modal-field">
             <label className="modal-label">Category</label>
             <select
@@ -128,7 +164,7 @@ export default function AddExpenseModal({ categories = [], onAdd, onClose }) {
               Cancel
             </button>
             <button type="submit" className="btn-primary" disabled={saving}>
-              {saving ? "Adding…" : "Add Expense"}
+              {saving ? "Adding…" : installmentCount > 1 ? `Add ${installmentCount} installments` : "Add Expense"}
             </button>
           </div>
         </form>

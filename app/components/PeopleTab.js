@@ -8,6 +8,7 @@ export default function PeopleTab({
   splits = [],
   onRecordPayment,
   onForgive,
+  onDeleteSplit,
   writeEnabled = false,
 }) {
   const [expandedPerson, setExpandedPerson] = useState(null);
@@ -216,6 +217,16 @@ export default function PeopleTab({
                                       Reset
                                     </button>
                                   )}
+                                  <button
+                                    className="btn-ghost"
+                                    style={{ fontSize: 10, padding: "3px 8px", minHeight: 28, color: "var(--red)", opacity: 0.6 }}
+                                    onClick={() => {
+                                      if (confirm(`Remove this split for ${sp.person}?`)) onDeleteSplit?.(sp.splitId);
+                                    }}
+                                    title="Delete this split entirely"
+                                  >
+                                    Delete
+                                  </button>
                                 </div>
                               )}
                             </td>

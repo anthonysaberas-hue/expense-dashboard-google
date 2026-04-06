@@ -275,6 +275,17 @@ export default function Dashboard() {
     await fetchExpenses();
   }, [fetchExpenses]);
 
+  const handleDeleteSplit = useCallback(async (splitId) => {
+    const res = await fetch(`/api/splits?splitId=${encodeURIComponent(splitId)}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || "Delete split failed");
+    }
+    await fetchExpenses();
+  }, [fetchExpenses]);
+
   // ── Tab rendering ─────────────────────────────────────────────
   const tabProps = { monthData, byMonth, monthKeys, selectedMonth, expenses };
 
@@ -301,6 +312,7 @@ export default function Dashboard() {
           splits={splits}
           onRecordPayment={handleRecordPayment}
           onForgive={handleForgive}
+          onDeleteSplit={handleDeleteSplit}
           writeEnabled={writeEnabled}
         />
       );

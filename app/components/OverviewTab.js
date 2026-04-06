@@ -1,6 +1,7 @@
 "use client";
 import { useMemo, useState, useCallback, useEffect } from "react";
 import { getCatColor, formatCurrency, formatMonthLabel, MONTHS, getNetAmount, getPrevMonths } from "../lib/constants";
+import { safeGet } from "../lib/storage";
 import EditableCell from "./EditableCell";
 import AddExpenseModal from "./AddExpenseModal";
 import SplitModal from "./SplitModal";
@@ -295,7 +296,11 @@ export default function OverviewTab({
   }, [searchRef]);
 
   const categories = ["All", ...Array.from(new Set(monthData.map((e) => e.category))).sort()];
-  const allCategories = useMemo(() => Array.from(new Set(expenses.map((e) => e.category).filter(Boolean))).sort(), [expenses]);
+  const allCategories = useMemo(() => {
+    const expCats = expenses.map((e) => e.category).filter(Boolean);
+    const customCats = Object.keys(safeGet("custom_categories", {}));
+    return [...new Set([...expCats, ...customCats])].sort();
+  }, [expenses]);
 
   const handleSort = (key) => {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -500,7 +505,9 @@ export default function OverviewTab({
                               </>
                             );
                           }
-                          return <EditableCell value={e.amount} field="amount" type="number" onSave={(f, v) => handleCellSave(e, f, v)} disabled={!writeEnabled} />;
+                          return <span style={{ fontSize: 15, fontWeight: 700, display: "block", textAlign: "right" }}>
+                            <EditableCell value={e.amount} field="amount" type="number" onSave={(f, v) => handleCellSave(e, f, v)} disabled={!writeEnabled} />
+                          </span>;
                         })()}
                       </td>
                       <td>
