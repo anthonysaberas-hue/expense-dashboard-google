@@ -44,7 +44,10 @@ export async function GET() {
     await ensureColumns();
 
     const { data } = await readAllRows();
-    const expenses = data.filter((r) => r.Name || r.Vendor).map(normalize);
+    const expenses = data
+      .filter((r) => r.Name || r.Vendor)
+      .map(normalize)
+      .filter((e) => !(e.amount === 0 && (e.notes || "").startsWith("[Split into")));
 
     // Read splits and attach to expenses
     let splits = [];
