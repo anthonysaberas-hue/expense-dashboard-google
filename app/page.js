@@ -286,24 +286,40 @@ export default function Dashboard() {
     const [startYear, startMonth] = (expense.date || "").split("-").map(Number);
     if (!startYear || !startMonth) throw new Error("Invalid expense date");
 
-    // Create N installment expenses
+    // Create N installment expenses — call API directly (no re-fetch per add)
     for (let i = 0; i < monthCount; i++) {
       const totalMonths = startMonth - 1 + i;
       const y = startYear + Math.floor(totalMonths / 12);
       const m = totalMonths % 12;
       const installDate = `${y}-${String(m + 1).padStart(2, "0")}-01`;
-      await handleAddExpense({
-        date: installDate,
-        vendor: expense.vendor || expense.name,
-        name: expense.name || expense.vendor,
-        category: expense.category,
-        amount: perMonth,
-        notes: expense.notes ? `${expense.notes} (${i + 1}/${monthCount})` : `${expense.vendor || expense.name} (${i + 1}/${monthCount})`,
+      const res = await fetch("/api/expenses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          date: installDate,
+          vendor: expense.vendor || expense.name,
+          name: expense.name || expense.vendor,
+          category: expense.category,
+          amount: perMonth,
+          notes: expense.notes ? `${expense.notes} (${i + 1}/${monthCount})` : `${expense.vendor || expense.name} (${i + 1}/${monthCount})`,
+        }),
       });
+      if (!res.ok) throw new Error("Failed to create installment");
     }
-    // Delete the original
-    await handleDeleteExpense(expense.id);
-  }, [handleAddExpense, handleDeleteExpense]);
+    // Archive the original — zero out amount and mark in notes (keeps traceability)
+    const archiveRes = await fetch("/api/expenses", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: expense.id,
+        amount: 0,
+        notes: `[Split into ${monthCount} months] ${expense.notes || ""}`.trim(),
+      }),
+    });
+    if (!archiveRes.ok) throw new Error("Failed to archive original expense");
+    // Single re-fetch at the end
+    await fetchExpenses();
+  }, [fetchExpenses]);
 
   const handleDeleteSplit = useCallback(async (splitId) => {
     const res = await fetch(`/api/splits?splitId=${encodeURIComponent(splitId)}`, {
