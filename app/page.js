@@ -291,7 +291,8 @@ export default function Dashboard() {
       const totalMonths = startMonth - 1 + i;
       const y = startYear + Math.floor(totalMonths / 12);
       const m = totalMonths % 12;
-      const installDate = `${y}-${String(m + 1).padStart(2, "0")}-01`;
+      // First month keeps the original date, subsequent months use the 1st
+      const installDate = i === 0 ? expense.date : `${y}-${String(m + 1).padStart(2, "0")}-01`;
       const res = await fetch("/api/expenses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
