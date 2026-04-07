@@ -142,18 +142,16 @@ export default function SplitModal({ expense, existingSplits = [], onSplit, onSp
             <form onSubmit={handleMonthSubmit}>
               <div className="modal-field">
                 <label className="modal-label">Number of months</label>
-                <select
+                <input
+                  type="number"
+                  min="2"
+                  max="24"
                   value={monthCount}
                   onChange={(e) => setMonthCount(e.target.value)}
-                  className="filter-select"
+                  className="search-input"
                   style={{ width: "100%" }}
-                >
-                  <option value="2">2 months</option>
-                  <option value="3">3 months</option>
-                  <option value="4">4 months</option>
-                  <option value="6">6 months</option>
-                  <option value="12">12 months</option>
-                </select>
+                  autoFocus
+                />
               </div>
               <div style={{ fontSize: 12, color: "var(--green)", fontWeight: 600, marginBottom: 12, padding: "8px 12px", background: "var(--green-light)", borderRadius: 6 }}>
                 {formatCurrency(expense.amount)} ÷ {mc} = {formatCurrency(perMonth)}/month

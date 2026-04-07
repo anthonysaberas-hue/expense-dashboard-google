@@ -62,7 +62,13 @@ export default function Dashboard() {
       const months = [...new Set(
         (data.expenses || []).map((e) => e.date?.substring(0, 7)).filter(Boolean)
       )].sort();
-      if (months.length > 0) setSelectedMonth((prev) => prev || months[months.length - 1]);
+      if (months.length > 0) setSelectedMonth((prev) => {
+        if (prev) return prev;
+        // Default to current calendar month if it has data, otherwise latest month with data
+        const now = new Date();
+        const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+        return months.includes(currentMonth) ? currentMonth : months[months.length - 1];
+      });
     } catch (err) {
       setError(err.message);
     } finally {
