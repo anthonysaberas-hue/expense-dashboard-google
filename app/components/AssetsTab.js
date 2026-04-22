@@ -31,6 +31,7 @@ export default function AssetsTab({ onAddHolding, onDeleteHolding }) {
   const [lastUpdated, setLastUpdated] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [showCsvModal, setShowCsvModal] = useState(false);
+  const [editingHolding, setEditingHolding] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
   const [warnings, setWarnings] = useState([]);
 
@@ -78,6 +79,19 @@ export default function AssetsTab({ onAddHolding, onDeleteHolding }) {
     }
     await loadAll();
     if (onAddHolding) onAddHolding();
+  };
+
+  const handleUpdateHolding = async (id, fields) => {
+    const res = await fetch("/api/holdings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, ...fields }),
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      throw new Error(data.error || "Failed to update holding");
+    }
+    await loadAll();
   };
 
   const handleDelete = async (id) => {
@@ -241,7 +255,25 @@ export default function AssetsTab({ onAddHolding, onDeleteHolding }) {
                   <td style={{ padding: "10px 10px", color: "var(--text-muted)", whiteSpace: "nowrap" }}>
                     {h.buyDate || "—"}
                   </td>
-                  <td style={{ padding: "10px 10px", textAlign: "right" }}>
+                  <td style={{ padding: "10px 10px", textAlign: "right", whiteSpace: "nowrap" }}>
+                    <button
+                      onClick={() => setEditingHolding(h)}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        color: "var(--text-muted)",
+                        fontSize: 13,
+                        lineHeight: 1,
+                        padding: "2px 6px",
+                        marginRight: 2,
+                        borderRadius: 4,
+                      }}
+                      title="Edit holding"
+                      aria-label={`Edit ${h.ticker}`}
+                    >
+                      ✎
+                    </button>
                     <button
                       onClick={() => handleDelete(h.id)}
                       disabled={deletingId === h.id}
@@ -271,6 +303,13 @@ export default function AssetsTab({ onAddHolding, onDeleteHolding }) {
 
       {showModal && (
         <AddHoldingModal onAdd={handleAddHolding} onClose={() => setShowModal(false)} />
+      )}
+      {editingHolding && (
+        <AddHoldingModal
+          holding={editingHolding}
+          onUpdate={handleUpdateHolding}
+          onClose={() => setEditingHolding(null)}
+        />
       )}
       {showCsvModal && (
         <CsvImportModal

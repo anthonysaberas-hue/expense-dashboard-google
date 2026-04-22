@@ -1,14 +1,15 @@
 "use client";
 import { useState } from "react";
 
-export default function AddHoldingModal({ onAdd, onClose }) {
+export default function AddHoldingModal({ onAdd, onUpdate, onClose, holding }) {
+  const isEdit = !!holding;
   const [form, setForm] = useState({
-    ticker: "",
-    shares: "",
-    buyPrice: "",
-    buyDate: new Date().toISOString().split("T")[0],
-    name: "",
-    notes: "",
+    ticker: holding?.ticker || "",
+    shares: holding != null ? String(holding.shares ?? "") : "",
+    buyPrice: holding != null ? String(holding.buyPrice ?? "") : "",
+    buyDate: holding?.buyDate || new Date().toISOString().split("T")[0],
+    name: holding?.name || "",
+    notes: holding?.notes || "",
   });
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -31,10 +32,11 @@ export default function AddHoldingModal({ onAdd, onClose }) {
       const quote = data.prices?.[ticker];
       if (quote) {
         setPricePreview(quote);
-        if (!form.buyPrice) {
+        // Only auto-fill when adding a new holding and fields are empty
+        if (!isEdit && !form.buyPrice) {
           setForm((prev) => ({ ...prev, buyPrice: quote.price?.toFixed(2) ?? "" }));
         }
-        if (!form.name && quote.name) {
+        if (!isEdit && !form.name && quote.name) {
           setForm((prev) => ({ ...prev, name: quote.name }));
         }
       } else {
@@ -60,17 +62,22 @@ export default function AddHoldingModal({ onAdd, onClose }) {
 
     setSaving(true);
     try {
-      await onAdd({
+      const payload = {
         ticker,
         shares: parseFloat(form.shares),
         buyPrice: parseFloat(form.buyPrice),
         buyDate: form.buyDate,
         name: form.name.trim(),
         notes: form.notes.trim(),
-      });
+      };
+      if (isEdit) {
+        await onUpdate(holding.id, payload);
+      } else {
+        await onAdd(payload);
+      }
       onClose();
     } catch (err) {
-      setError(err.message || "Failed to add holding");
+      setError(err.message || (isEdit ? "Failed to save changes" : "Failed to add holding"));
     } finally {
       setSaving(false);
     }
@@ -78,9 +85,9 @@ export default function AddHoldingModal({ onAdd, onClose }) {
 
   return (
     <div className="modal-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal-card" role="dialog" aria-modal="true" aria-label="Add holding">
+      <div className="modal-card" role="dialog" aria-modal="true" aria-label={isEdit ? "Edit holding" : "Add holding"}>
         <div className="modal-header">
-          <h2 className="modal-title">Add Holding</h2>
+          <h2 className="modal-title">{isEdit ? `Edit ${holding.ticker}` : "Add Holding"}</h2>
           <button onClick={onClose} className="modal-close" aria-label="Close">×</button>
         </div>
         <form onSubmit={handleSubmit} className="modal-body">
@@ -174,7 +181,7 @@ export default function AddHoldingModal({ onAdd, onClose }) {
           <div className="modal-actions">
             <button type="button" onClick={onClose} className="btn-ghost">Cancel</button>
             <button type="submit" className="btn-primary" disabled={saving}>
-              {saving ? "Adding…" : "Add Holding"}
+              {saving ? "Saving…" : isEdit ? "Save changes" : "Add Holding"}
             </button>
           </div>
         </form>
