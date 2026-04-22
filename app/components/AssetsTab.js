@@ -101,13 +101,17 @@ export default function AssetsTab({ onAddHolding, onDeleteHolding }) {
     const currentValue = currentPrice !== null ? h.shares * currentPrice : null;
     const gainLoss = currentValue !== null ? currentValue - invested : null;
     const gainLossPct = gainLoss !== null && invested > 0 ? (gainLoss / invested) * 100 : null;
-    return { ...h, currentPrice, currency, invested, currentValue, gainLoss, gainLossPct, quoteName: quote?.name };
+    return { ...h, currentPrice, currency, invested, currentValue, gainLoss, gainLossPct, quoteName: quote?.name, resolvedTicker: quote?.resolvedTicker };
   });
 
-  const totalInvested = enriched.reduce((s, h) => s + h.invested, 0);
-  const totalValue = enriched.reduce((s, h) => s + (h.currentValue ?? h.invested), 0);
+  // Only count priced positions in the totals — unpriced would otherwise inflate value with cost basis
+  const priced = enriched.filter((h) => h.currentValue !== null);
+  const unpriced = enriched.filter((h) => h.currentValue === null);
+  const totalInvested = priced.reduce((s, h) => s + h.invested, 0);
+  const totalValue = priced.reduce((s, h) => s + h.currentValue, 0);
   const totalGainLoss = totalValue - totalInvested;
   const totalGainLossPct = totalInvested > 0 ? (totalGainLoss / totalInvested) * 100 : 0;
+  const unpricedCost = unpriced.reduce((s, h) => s + h.invested, 0);
 
   if (loading) {
     return (
@@ -168,9 +172,15 @@ export default function AssetsTab({ onAddHolding, onDeleteHolding }) {
         </div>
       </div>
 
-      {warnings.length > 0 && (
-        <div style={{ fontSize: 12, color: "var(--text-muted)", background: "var(--surface2, var(--card-bg))", borderRadius: 8, padding: "8px 12px" }}>
-          {warnings.map((w, i) => <div key={i}>⚠ {w}</div>)}
+      {unpriced.length > 0 && (
+        <div style={{ fontSize: 12, color: "var(--text-secondary)", background: "var(--surface2, var(--card-bg))", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 14px" }}>
+          <div style={{ fontWeight: 600, marginBottom: 4 }}>
+            ⚠ {unpriced.length} position{unpriced.length === 1 ? "" : "s"} couldn't be priced ({fmt(unpricedCost)} cost basis excluded from totals)
+          </div>
+          <div style={{ color: "var(--text-muted)" }}>
+            Unpriced: {unpriced.map((h) => h.ticker).join(", ")}. These are excluded from the total value above.
+            If a position is closed (you sold everything), click the × to remove it.
+          </div>
         </div>
       )}
 
@@ -219,7 +229,7 @@ export default function AssetsTab({ onAddHolding, onDeleteHolding }) {
                     {h.currentPrice !== null ? fmt(h.currentPrice, h.currency) : <span style={{ color: "var(--text-muted)" }}>N/A</span>}
                   </td>
                   <td style={{ padding: "10px 10px", textAlign: "right", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
-                    {h.currentValue !== null ? fmt(h.currentValue, h.currency) : fmt(h.invested, h.currency)}
+                    {h.currentValue !== null ? fmt(h.currentValue, h.currency) : <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>N/A</span>}
                   </td>
                   <td style={{ padding: "10px 10px", textAlign: "right" }}>
                     {h.gainLoss !== null && h.gainLossPct !== null ? (

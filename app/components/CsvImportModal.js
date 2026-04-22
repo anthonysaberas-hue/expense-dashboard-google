@@ -93,17 +93,20 @@ function aggregatePositions(rows) {
 
   return Object.values(bySymbol)
     .map((e) => {
-      const netShares = e.buyShares - e.sellShares;
+      const rawNet = e.buyShares - e.sellShares;
+      // Treat any residue smaller than 0.001 share as exactly zero (float dust from fractional trades)
+      const closed = Math.abs(rawNet) < 0.001;
+      const netShares = closed ? 0 : Math.round(rawNet * 10000) / 10000;
       const avgBuyPrice = e.buyShares > 0 ? e.buyCost / e.buyShares : 0;
       return {
         ticker: e.symbol,
         name: e.name,
-        shares: Math.round(netShares * 10000) / 10000,
+        shares: netShares,
         buyPrice: Math.round(avgBuyPrice * 100) / 100,
         buyDate: e.earliestDate,
         currency: e.currency,
         tradeCount: e.tradeCount,
-        closed: netShares <= 0.0001,
+        closed,
       };
     })
     .sort((a, b) => a.ticker.localeCompare(b.ticker));
@@ -135,7 +138,7 @@ export default function CsvImportModal({ onImport, onClose }) {
       const agg = aggregatePositions(rows);
       setPositions(agg);
       const initSel = {};
-      agg.forEach((p) => { initSel[p.ticker] = !p.closed; });
+      agg.forEach((p) => { initSel[p.ticker] = false; }); // user must opt in to avoid accidents
       setSelected(initSel);
     } catch (err) {
       setError(err.message || "Failed to parse CSV");
@@ -143,10 +146,25 @@ export default function CsvImportModal({ onImport, onClose }) {
   };
 
   const toggleOne = (ticker) => {
+    const p = positions.find((x) => x.ticker === ticker);
+    if (!p || p.closed) return; // closed positions can never be imported
     setSelected((prev) => ({ ...prev, [ticker]: !prev[ticker] }));
   };
 
-  const selectedPositions = positions.filter((p) => selected[p.ticker]);
+  const openPositions = positions.filter((p) => !p.closed);
+  const selectAll = () => {
+    const next = { ...selected };
+    openPositions.forEach((p) => { next[p.ticker] = true; });
+    setSelected(next);
+  };
+  const deselectAll = () => {
+    const next = { ...selected };
+    openPositions.forEach((p) => { next[p.ticker] = false; });
+    setSelected(next);
+  };
+
+  // Defensive: never allow closed positions through even if state is stale
+  const selectedPositions = positions.filter((p) => selected[p.ticker] && !p.closed);
 
   const handleImport = async () => {
     if (selectedPositions.length === 0) return;
@@ -211,9 +229,15 @@ export default function CsvImportModal({ onImport, onClose }) {
 
           {positions.length > 0 && (
             <>
-              <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
-                <strong style={{ color: "var(--text)" }}>{fileName}</strong> — parsed {rawCount} rows →{" "}
-                {positions.length} position{positions.length === 1 ? "" : "s"} ({positions.filter((p) => p.closed).length} closed)
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                  <strong style={{ color: "var(--text)" }}>{fileName}</strong> — parsed {rawCount} rows →{" "}
+                  {openPositions.length} open + {positions.filter((p) => p.closed).length} closed (excluded)
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button type="button" className="btn-ghost" style={{ fontSize: 11, padding: "4px 10px" }} onClick={selectAll} disabled={importing}>Select all</button>
+                  <button type="button" className="btn-ghost" style={{ fontSize: 11, padding: "4px 10px" }} onClick={deselectAll} disabled={importing}>Deselect all</button>
+                </div>
               </div>
               <div style={{ overflowX: "auto", maxHeight: 380, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 8 }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
@@ -234,9 +258,10 @@ export default function CsvImportModal({ onImport, onClose }) {
                         <td style={{ padding: "8px 10px" }}>
                           <input
                             type="checkbox"
-                            checked={!!selected[p.ticker]}
+                            checked={!!selected[p.ticker] && !p.closed}
                             onChange={() => toggleOne(p.ticker)}
-                            disabled={importing}
+                            disabled={importing || p.closed}
+                            title={p.closed ? "Closed position — cannot import" : ""}
                           />
                         </td>
                         <td style={{ padding: "8px 10px", fontWeight: 700 }}>{p.ticker}</td>
@@ -255,8 +280,8 @@ export default function CsvImportModal({ onImport, onClose }) {
                 </table>
               </div>
               <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 10 }}>
-                Tip: closed positions (net zero shares) are unchecked by default. Each selected row becomes a new holding —
-                this is additive, so re-running will create duplicates.
+                Closed positions (net zero shares) are disabled and can't be imported. Each selected row becomes a new holding —
+                this is additive, so re-importing creates duplicates. Delete existing holdings first via the × button if re-importing.
               </p>
             </>
           )}
