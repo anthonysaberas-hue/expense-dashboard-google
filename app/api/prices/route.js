@@ -27,8 +27,35 @@ async function fetchQuote(ticker) {
   }
 }
 
-// Try the ticker as-is, then with a .TO suffix (TSX) if it has no suffix
+// Synthetic tickers that don't map directly to a Yahoo symbol.
+// GOLD → spot gold per ounce in CAD = gold-USD × USD/CAD FX rate.
+const SYNTHETIC = {
+  GOLD: async () => {
+    const [goldUsd, usdCad] = await Promise.all([
+      fetchQuote("GC=F"),      // Gold futures, USD per oz
+      fetchQuote("CAD=X"),     // USD → CAD FX rate (e.g. 1.37)
+    ]);
+    if (!goldUsd || !usdCad) return null;
+    const previousClose =
+      goldUsd.previousClose != null && usdCad.previousClose != null
+        ? goldUsd.previousClose * usdCad.previousClose
+        : null;
+    return {
+      price: goldUsd.price * usdCad.price,
+      currency: "CAD",
+      name: "Gold (spot, CAD per oz)",
+      previousClose,
+      resolvedTicker: "GC=F × CAD=X",
+    };
+  },
+};
+
+// Try synthetic first, then the ticker as-is, then with a .TO suffix (TSX)
 async function fetchWithFallback(ticker) {
+  if (SYNTHETIC[ticker]) {
+    const synth = await SYNTHETIC[ticker]();
+    if (synth) return synth;
+  }
   const direct = await fetchQuote(ticker);
   if (direct) return direct;
   if (!ticker.includes(".")) {
