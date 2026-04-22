@@ -6,6 +6,7 @@ import OverviewTab from "./components/OverviewTab";
 import TrendsTab from "./components/TrendsTab";
 import InsightsTab from "./components/InsightsTab";
 import PeopleTab from "./components/PeopleTab";
+import AssetsTab from "./components/AssetsTab";
 import ErrorBoundary from "./components/ErrorBoundary";
 import DateRangePicker from "./components/DateRangePicker";
 import TopCategories from "./components/TopCategories";
@@ -15,7 +16,7 @@ import { safeGet, safeSet } from "./lib/storage";
 import { applyTheme, getTheme } from "./lib/theme";
 import { formatMonthLabel } from "./lib/constants";
 
-const TAB_LABELS = ["Overview", "People", "Trends", "Insights"];
+const TAB_LABELS = ["Overview", "People", "Trends", "Insights", "Assets"];
 
 function SkeletonLoader() {
   return (
@@ -145,7 +146,7 @@ export default function Dashboard() {
   useEffect(() => {
     const handleKey = (e) => {
       if (e.target.matches("input, textarea, [contenteditable]")) return;
-      if (e.key >= "1" && e.key <= "4") {
+      if (e.key >= "1" && e.key <= "5") {
         e.preventDefault();
         setActiveTab(Number(e.key) - 1);
       } else if (e.key === "ArrowLeft") {
@@ -376,6 +377,7 @@ export default function Dashboard() {
           onBatchCategoryUpdate={handleBatchCategoryUpdate}
         />
       );
+      case 4: return <AssetsTab />;
       default: return null;
     }
   };
@@ -440,7 +442,7 @@ export default function Dashboard() {
       </header>
 
       {/* ── Tab bar ────────────────────────────────────────── */}
-      {!loading && !error && expenses.length > 0 && (
+      {!loading && !error && (
         <TabBar activeTab={activeTab} onTabChange={setActiveTab} warningCount={warningCount} />
       )}
 
@@ -460,7 +462,7 @@ export default function Dashboard() {
               Retry
             </button>
           </div>
-        ) : expenses.length === 0 ? (
+        ) : expenses.length === 0 && activeTab !== 4 ? (
           <div className="card" style={{ textAlign: "center", padding: "3rem" }}>
             <div style={{ fontSize: 36, marginBottom: 12 }}>📭</div>
             <div style={{ fontSize: 16, fontWeight: 500, color: "var(--text-secondary)" }}>No expenses yet</div>
