@@ -34,6 +34,10 @@ export default function AssetsTab({ onAddHolding, onDeleteHolding }) {
   const [editingHolding, setEditingHolding] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
   const [warnings, setWarnings] = useState([]);
+  const [expanded, setExpanded] = useState({}); // ticker → bool
+
+  const toggleExpand = (ticker) =>
+    setExpanded((prev) => ({ ...prev, [ticker]: !prev[ticker] }));
 
   const fetchHoldings = useCallback(async () => {
     const res = await fetch("/api/holdings");
@@ -106,7 +110,7 @@ export default function AssetsTab({ onAddHolding, onDeleteHolding }) {
     }
   };
 
-  // Enrich holdings with live price data
+  // Enrich each lot with live price data
   const enriched = holdings.map((h) => {
     const quote = prices[h.ticker];
     const currentPrice = quote?.price ?? null;
@@ -115,17 +119,55 @@ export default function AssetsTab({ onAddHolding, onDeleteHolding }) {
     const currentValue = currentPrice !== null ? h.shares * currentPrice : null;
     const gainLoss = currentValue !== null ? currentValue - invested : null;
     const gainLossPct = gainLoss !== null && invested > 0 ? (gainLoss / invested) * 100 : null;
-    return { ...h, currentPrice, currency, invested, currentValue, gainLoss, gainLossPct, quoteName: quote?.name, resolvedTicker: quote?.resolvedTicker };
+    return { ...h, currentPrice, currency, invested, currentValue, gainLoss, gainLossPct, quoteName: quote?.name };
   });
 
-  // Only count priced positions in the totals — unpriced would otherwise inflate value with cost basis
-  const priced = enriched.filter((h) => h.currentValue !== null);
-  const unpriced = enriched.filter((h) => h.currentValue === null);
-  const totalInvested = priced.reduce((s, h) => s + h.invested, 0);
-  const totalValue = priced.reduce((s, h) => s + h.currentValue, 0);
+  // Group lots by ticker → build one aggregated position per ticker
+  const groupedMap = {};
+  for (const lot of enriched) {
+    if (!groupedMap[lot.ticker]) {
+      groupedMap[lot.ticker] = {
+        ticker: lot.ticker,
+        currency: lot.currency,
+        currentPrice: lot.currentPrice,
+        quoteName: lot.quoteName,
+        lots: [],
+        totalShares: 0,
+        totalInvested: 0,
+        totalValue: 0,
+        canPrice: lot.currentPrice !== null,
+        name: lot.name || lot.quoteName || "",
+        earliestBuyDate: lot.buyDate || null,
+      };
+    }
+    const g = groupedMap[lot.ticker];
+    g.lots.push(lot);
+    g.totalShares += lot.shares;
+    g.totalInvested += lot.invested;
+    if (lot.currentValue !== null) g.totalValue += lot.currentValue;
+    if (!g.name && lot.name) g.name = lot.name;
+    if (lot.buyDate && (!g.earliestBuyDate || lot.buyDate < g.earliestBuyDate)) {
+      g.earliestBuyDate = lot.buyDate;
+    }
+  }
+  const grouped = Object.values(groupedMap)
+    .map((g) => {
+      const avgBuyPrice = g.totalShares > 0 ? g.totalInvested / g.totalShares : 0;
+      const gainLoss = g.canPrice ? g.totalValue - g.totalInvested : null;
+      const gainLossPct = gainLoss !== null && g.totalInvested > 0 ? (gainLoss / g.totalInvested) * 100 : null;
+      // Sort lots chronologically, oldest first
+      g.lots.sort((a, b) => (a.buyDate || "").localeCompare(b.buyDate || ""));
+      return { ...g, avgBuyPrice, gainLoss, gainLossPct };
+    })
+    .sort((a, b) => a.ticker.localeCompare(b.ticker));
+
+  const pricedGroups = grouped.filter((g) => g.canPrice);
+  const unpricedGroups = grouped.filter((g) => !g.canPrice);
+  const totalInvested = pricedGroups.reduce((s, g) => s + g.totalInvested, 0);
+  const totalValue = pricedGroups.reduce((s, g) => s + g.totalValue, 0);
   const totalGainLoss = totalValue - totalInvested;
   const totalGainLossPct = totalInvested > 0 ? (totalGainLoss / totalInvested) * 100 : 0;
-  const unpricedCost = unpriced.reduce((s, h) => s + h.invested, 0);
+  const unpricedCost = unpricedGroups.reduce((s, g) => s + g.totalInvested, 0);
 
   if (loading) {
     return (
@@ -155,7 +197,7 @@ export default function AssetsTab({ onAddHolding, onDeleteHolding }) {
         </div>
         <div className="stat-card">
           <div className="stat-label">Positions</div>
-          <div className="stat-value">{holdings.length}</div>
+          <div className="stat-value">{grouped.length}</div>
         </div>
       </div>
 
@@ -186,116 +228,187 @@ export default function AssetsTab({ onAddHolding, onDeleteHolding }) {
         </div>
       </div>
 
-      {unpriced.length > 0 && (
+      {unpricedGroups.length > 0 && (
         <div style={{ fontSize: 12, color: "var(--text-secondary)", background: "var(--surface2, var(--card-bg))", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 14px" }}>
           <div style={{ fontWeight: 600, marginBottom: 4 }}>
-            ⚠ {unpriced.length} position{unpriced.length === 1 ? "" : "s"} couldn't be priced ({fmt(unpricedCost)} cost basis excluded from totals)
+            ⚠ {unpricedGroups.length} position{unpricedGroups.length === 1 ? "" : "s"} couldn't be priced ({fmt(unpricedCost)} cost basis excluded from totals)
           </div>
           <div style={{ color: "var(--text-muted)" }}>
-            Unpriced: {unpriced.map((h) => h.ticker).join(", ")}. These are excluded from the total value above.
-            If a position is closed (you sold everything), click the × to remove it.
+            Unpriced: {unpricedGroups.map((g) => g.ticker).join(", ")}. Click the ✎ pencil to edit the ticker
+            (e.g. Canadian ETFs may need a .TO suffix, or change &quot;GOLD&quot; to the actual symbol you hold like CGL.TO).
           </div>
         </div>
       )}
 
-      {/* Holdings table */}
-      {enriched.length === 0 ? (
+      {/* Holdings table — one row per ticker, click to expand into individual lots */}
+      {grouped.length === 0 ? (
         <div style={{ textAlign: "center", color: "var(--text-muted)", padding: "48px 0" }}>
           <div style={{ fontSize: 32, marginBottom: 8 }}>📈</div>
           <div style={{ fontWeight: 600, marginBottom: 4 }}>No holdings yet</div>
-          <div style={{ fontSize: 13 }}>Click "Add Holding" to log your first position.</div>
+          <div style={{ fontSize: 13 }}>Click &quot;Add Holding&quot; to log your first position.</div>
         </div>
       ) : (
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ borderBottom: "2px solid var(--border)", color: "var(--text-muted)", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                <th style={{ width: 28, padding: "6px 4px" }}></th>
                 <th style={{ textAlign: "left", padding: "6px 10px", fontWeight: 600 }}>Ticker</th>
                 <th style={{ textAlign: "left", padding: "6px 10px", fontWeight: 600 }}>Name</th>
                 <th style={{ textAlign: "right", padding: "6px 10px", fontWeight: 600 }}>Shares</th>
-                <th style={{ textAlign: "right", padding: "6px 10px", fontWeight: 600 }}>Buy Price</th>
-                <th style={{ textAlign: "right", padding: "6px 10px", fontWeight: 600 }}>Current Price</th>
+                <th style={{ textAlign: "right", padding: "6px 10px", fontWeight: 600 }}>Avg Buy</th>
+                <th style={{ textAlign: "right", padding: "6px 10px", fontWeight: 600 }}>Current</th>
                 <th style={{ textAlign: "right", padding: "6px 10px", fontWeight: 600 }}>Value</th>
                 <th style={{ textAlign: "right", padding: "6px 10px", fontWeight: 600 }}>Gain / Loss</th>
-                <th style={{ textAlign: "left", padding: "6px 10px", fontWeight: 600 }}>Buy Date</th>
+                <th style={{ textAlign: "left", padding: "6px 10px", fontWeight: 600 }}>First Buy</th>
                 <th style={{ padding: "6px 10px" }}></th>
               </tr>
             </thead>
             <tbody>
-              {enriched.map((h) => (
-                <tr
-                  key={h.id}
-                  style={{ borderBottom: "1px solid var(--border)" }}
-                >
-                  <td style={{ padding: "10px 10px", fontWeight: 700, color: "var(--text)", letterSpacing: "0.03em" }}>
-                    {h.ticker}
-                  </td>
-                  <td style={{ padding: "10px 10px", color: "var(--text-secondary)", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {h.name || h.quoteName || "—"}
-                  </td>
-                  <td style={{ padding: "10px 10px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                    {h.shares}
-                  </td>
-                  <td style={{ padding: "10px 10px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                    {fmt(h.buyPrice, h.currency)}
-                  </td>
-                  <td style={{ padding: "10px 10px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                    {h.currentPrice !== null ? fmt(h.currentPrice, h.currency) : <span style={{ color: "var(--text-muted)" }}>N/A</span>}
-                  </td>
-                  <td style={{ padding: "10px 10px", textAlign: "right", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
-                    {h.currentValue !== null ? fmt(h.currentValue, h.currency) : <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>N/A</span>}
-                  </td>
-                  <td style={{ padding: "10px 10px", textAlign: "right" }}>
-                    {h.gainLoss !== null && h.gainLossPct !== null ? (
-                      <GainBadge value={h.gainLoss} pct={h.gainLossPct} />
-                    ) : (
-                      <span style={{ color: "var(--text-muted)" }}>—</span>
-                    )}
-                  </td>
-                  <td style={{ padding: "10px 10px", color: "var(--text-muted)", whiteSpace: "nowrap" }}>
-                    {h.buyDate || "—"}
-                  </td>
-                  <td style={{ padding: "10px 10px", textAlign: "right", whiteSpace: "nowrap" }}>
-                    <button
-                      onClick={() => setEditingHolding(h)}
+              {grouped.flatMap((g) => {
+                const isOpen = !!expanded[g.ticker];
+                const hasMultipleLots = g.lots.length > 1;
+                const rows = [
+                  /* Summary row */
+                  <tr
+                      key={`sum-${g.ticker}`}
                       style={{
-                        background: "none",
-                        border: "none",
-                        cursor: "pointer",
-                        color: "var(--text-muted)",
-                        fontSize: 13,
-                        lineHeight: 1,
-                        padding: "2px 6px",
-                        marginRight: 2,
-                        borderRadius: 4,
+                        borderBottom: isOpen ? "none" : "1px solid var(--border)",
+                        cursor: hasMultipleLots ? "pointer" : "default",
+                        background: isOpen ? "var(--surface2, var(--card-bg))" : "transparent",
                       }}
-                      title="Edit holding"
-                      aria-label={`Edit ${h.ticker}`}
+                      onClick={() => hasMultipleLots && toggleExpand(g.ticker)}
                     >
-                      ✎
-                    </button>
-                    <button
-                      onClick={() => handleDelete(h.id)}
-                      disabled={deletingId === h.id}
-                      style={{
-                        background: "none",
-                        border: "none",
-                        cursor: "pointer",
-                        color: "var(--text-muted)",
-                        fontSize: 16,
-                        lineHeight: 1,
-                        padding: "2px 4px",
-                        borderRadius: 4,
-                        opacity: deletingId === h.id ? 0.4 : 1,
-                      }}
-                      title="Remove holding"
-                      aria-label={`Remove ${h.ticker}`}
-                    >
-                      ×
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                      <td style={{ padding: "10px 4px", textAlign: "center", color: "var(--text-muted)" }}>
+                        {hasMultipleLots ? (isOpen ? "▾" : "▸") : ""}
+                      </td>
+                      <td style={{ padding: "10px 10px", fontWeight: 700, color: "var(--text)", letterSpacing: "0.03em" }}>
+                        {g.ticker}
+                        {hasMultipleLots && (
+                          <span style={{ marginLeft: 6, fontSize: 10, color: "var(--text-muted)", fontWeight: 500, letterSpacing: 0 }}>
+                            {g.lots.length} lots
+                          </span>
+                        )}
+                      </td>
+                      <td style={{ padding: "10px 10px", color: "var(--text-secondary)", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {g.name || "—"}
+                      </td>
+                      <td style={{ padding: "10px 10px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                        {Math.round(g.totalShares * 10000) / 10000}
+                      </td>
+                      <td style={{ padding: "10px 10px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                        {fmt(g.avgBuyPrice, g.currency)}
+                      </td>
+                      <td style={{ padding: "10px 10px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                        {g.currentPrice !== null ? fmt(g.currentPrice, g.currency) : <span style={{ color: "var(--text-muted)" }}>N/A</span>}
+                      </td>
+                      <td style={{ padding: "10px 10px", textAlign: "right", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
+                        {g.canPrice ? fmt(g.totalValue, g.currency) : <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>N/A</span>}
+                      </td>
+                      <td style={{ padding: "10px 10px", textAlign: "right" }}>
+                        {g.gainLoss !== null && g.gainLossPct !== null ? (
+                          <GainBadge value={g.gainLoss} pct={g.gainLossPct} />
+                        ) : (
+                          <span style={{ color: "var(--text-muted)" }}>—</span>
+                        )}
+                      </td>
+                      <td style={{ padding: "10px 10px", color: "var(--text-muted)", whiteSpace: "nowrap" }}>
+                        {g.earliestBuyDate || "—"}
+                      </td>
+                      <td style={{ padding: "10px 10px", textAlign: "right", whiteSpace: "nowrap" }} onClick={(e) => e.stopPropagation()}>
+                        {/* When only one lot, edit/delete operate on that single lot directly */}
+                        {!hasMultipleLots && (
+                          <>
+                            <button
+                              onClick={() => setEditingHolding(g.lots[0])}
+                              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: 13, lineHeight: 1, padding: "2px 6px", marginRight: 2, borderRadius: 4 }}
+                              title="Edit holding"
+                              aria-label={`Edit ${g.ticker}`}
+                            >
+                              ✎
+                            </button>
+                            <button
+                              onClick={() => handleDelete(g.lots[0].id)}
+                              disabled={deletingId === g.lots[0].id}
+                              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: 16, lineHeight: 1, padding: "2px 4px", borderRadius: 4, opacity: deletingId === g.lots[0].id ? 0.4 : 1 }}
+                              title="Remove holding"
+                              aria-label={`Remove ${g.ticker}`}
+                            >
+                              ×
+                            </button>
+                          </>
+                        )}
+                      </td>
+                    </tr>,
+                ];
+
+                /* Expanded: one row per lot */
+                if (isOpen) {
+                  g.lots.forEach((lot, idx) => {
+                    rows.push(
+                      <tr
+                        key={`lot-${lot.id}`}
+                        style={{
+                          borderBottom: idx === g.lots.length - 1 ? "1px solid var(--border)" : "1px dashed var(--border)",
+                          fontSize: 12,
+                          background: "var(--surface2, var(--card-bg))",
+                          color: "var(--text-secondary)",
+                        }}
+                      >
+                        <td></td>
+                        <td style={{ padding: "6px 10px", paddingLeft: 30, fontStyle: "italic", color: "var(--text-muted)" }}>
+                          Lot {idx + 1}
+                        </td>
+                        <td style={{ padding: "6px 10px", color: "var(--text-muted)", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {lot.notes || lot.name || "—"}
+                        </td>
+                        <td style={{ padding: "6px 10px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                          {lot.shares}
+                        </td>
+                        <td style={{ padding: "6px 10px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                          {fmt(lot.buyPrice, lot.currency)}
+                        </td>
+                        <td style={{ padding: "6px 10px", textAlign: "right", fontVariantNumeric: "tabular-nums", color: "var(--text-muted)" }}>
+                          {lot.currentPrice !== null ? fmt(lot.currentPrice, lot.currency) : "—"}
+                        </td>
+                        <td style={{ padding: "6px 10px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                          {lot.currentValue !== null ? fmt(lot.currentValue, lot.currency) : <span style={{ color: "var(--text-muted)" }}>N/A</span>}
+                        </td>
+                        <td style={{ padding: "6px 10px", textAlign: "right" }}>
+                          {lot.gainLoss !== null && lot.gainLossPct !== null ? (
+                            <GainBadge value={lot.gainLoss} pct={lot.gainLossPct} />
+                          ) : (
+                            <span style={{ color: "var(--text-muted)" }}>—</span>
+                          )}
+                        </td>
+                        <td style={{ padding: "6px 10px", color: "var(--text-muted)", whiteSpace: "nowrap" }}>
+                          {lot.buyDate || "—"}
+                        </td>
+                        <td style={{ padding: "6px 10px", textAlign: "right", whiteSpace: "nowrap" }}>
+                          <button
+                            onClick={() => setEditingHolding(lot)}
+                            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: 13, lineHeight: 1, padding: "2px 6px", marginRight: 2, borderRadius: 4 }}
+                            title="Edit lot"
+                            aria-label={`Edit lot ${idx + 1}`}
+                          >
+                            ✎
+                          </button>
+                          <button
+                            onClick={() => handleDelete(lot.id)}
+                            disabled={deletingId === lot.id}
+                            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: 16, lineHeight: 1, padding: "2px 4px", borderRadius: 4, opacity: deletingId === lot.id ? 0.4 : 1 }}
+                            title="Remove lot"
+                            aria-label={`Remove lot ${idx + 1}`}
+                          >
+                            ×
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  });
+                }
+                return rows;
+              })}
             </tbody>
           </table>
         </div>
