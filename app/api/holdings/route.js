@@ -1,4 +1,4 @@
-import { readAllHoldings, appendHolding, updateHolding, deleteHolding } from "../../lib/holdings";
+import { readAllHoldings, appendHolding, updateHolding, deleteHolding, deleteAllHoldings } from "../../lib/holdings";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -70,9 +70,12 @@ export async function PATCH(request) {
 export async function DELETE(request) {
   try {
     const { searchParams } = new URL(request.url);
+    if (searchParams.get("all") === "true") {
+      const deleted = await deleteAllHoldings();
+      return Response.json({ ok: true, deleted });
+    }
     const id = searchParams.get("id");
     if (!id) return Response.json({ error: "id is required" }, { status: 400 });
-
     await deleteHolding(id);
     return Response.json({ ok: true });
   } catch (err) {

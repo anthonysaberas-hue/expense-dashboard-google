@@ -164,7 +164,7 @@ export default function AssetsTab({ onAddHolding, onDeleteHolding }) {
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           <button className="btn-ghost" onClick={() => setShowCsvModal(true)}>
-            ⬆ Import CSV
+            ⟳ Sync from CSV
           </button>
           <button className="btn-primary" onClick={() => setShowModal(true)}>
             + Add Holding
@@ -274,21 +274,8 @@ export default function AssetsTab({ onAddHolding, onDeleteHolding }) {
       )}
       {showCsvModal && (
         <CsvImportModal
-          onImport={async (fields) => {
-            const res = await fetch("/api/holdings", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(fields),
-            });
-            if (!res.ok) {
-              const data = await res.json();
-              throw new Error(data.error || "Import failed");
-            }
-          }}
-          onClose={() => {
-            setShowCsvModal(false);
-            loadAll();
-          }}
+          onClose={() => setShowCsvModal(false)}
+          onDone={() => loadAll()}
         />
       )}
     </div>

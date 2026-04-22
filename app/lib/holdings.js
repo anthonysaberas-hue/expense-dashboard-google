@@ -154,6 +154,38 @@ export async function updateHolding(id, fields) {
   }
 }
 
+// Delete every data row in the Holdings tab, keeping the header row intact.
+export async function deleteAllHoldings() {
+  const client = await getClient();
+  const spreadsheetId = getSheetId();
+  await ensureHoldingsTab(client, spreadsheetId);
+
+  const res = await client.request({
+    url: `${API}/${spreadsheetId}/values/${encodeURIComponent(HOLDINGS_TAB)}`,
+  });
+  const rows = res.data.values || [];
+  if (rows.length <= 1) return 0; // header-only or empty
+
+  const sheetId = await getHoldingsSheetId(client, spreadsheetId);
+  await client.request({
+    url: `${API}/${spreadsheetId}:batchUpdate`,
+    method: "POST",
+    data: {
+      requests: [{
+        deleteDimension: {
+          range: {
+            sheetId,
+            dimension: "ROWS",
+            startIndex: 1, // keep header
+            endIndex: rows.length,
+          },
+        },
+      }],
+    },
+  });
+  return rows.length - 1;
+}
+
 export async function deleteHolding(id) {
   const client = await getClient();
   const spreadsheetId = getSheetId();
