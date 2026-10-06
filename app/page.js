@@ -282,6 +282,47 @@ export default function Dashboard() {
     await fetchExpenses();
   }, [fetchExpenses]);
 
+  const handleSettleAllForPerson = useCallback(async (person) => {
+    const toSettle = splits.filter(
+      (sp) => sp.person === person && sp.status !== "forgiven" && sp.repaid < sp.share
+    );
+    for (const sp of toSettle) {
+      const res = await fetch("/api/splits", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ splitId: sp.splitId, repaid: sp.share, status: "settled" }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Settle all failed");
+      }
+    }
+    await fetchExpenses();
+  }, [splits, fetchExpenses]);
+
+  const handleSettleMonthForPerson = useCallback(async (person, yyyymm) => {
+    const expenseById = {};
+    expenses.forEach((e) => { if (e.id) expenseById[e.id] = e; });
+    const toSettle = splits.filter((sp) => {
+      if (sp.person !== person || sp.status === "forgiven" || sp.repaid >= sp.share) return false;
+      const date = expenseById[sp.expenseId]?.date;
+      const month = date ? date.slice(0, 7) : "unknown";
+      return month === yyyymm;
+    });
+    for (const sp of toSettle) {
+      const res = await fetch("/api/splits", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ splitId: sp.splitId, repaid: sp.share, status: "settled" }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Settle month failed");
+      }
+    }
+    await fetchExpenses();
+  }, [splits, expenses, fetchExpenses]);
+
   const handleSplitMonths = useCallback(async (expense, monthCount) => {
     const perMonth = Math.round((expense.amount / monthCount) * 100) / 100;
     const [startYear, startMonth] = (expense.date || "").split("-").map(Number);
@@ -362,6 +403,8 @@ export default function Dashboard() {
           onRecordPayment={handleRecordPayment}
           onForgive={handleForgive}
           onDeleteSplit={handleDeleteSplit}
+          onSettleAll={handleSettleAllForPerson}
+          onSettleMonth={handleSettleMonthForPerson}
           writeEnabled={writeEnabled}
         />
       );

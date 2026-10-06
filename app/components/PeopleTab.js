@@ -1,6 +1,6 @@
 "use client";
 import { useState, useMemo, useCallback } from "react";
-import { formatCurrency } from "../lib/constants";
+import { formatCurrency, formatMonthLabel } from "../lib/constants";
 import EmptyState from "./EmptyState";
 
 export default function PeopleTab({
@@ -9,10 +9,13 @@ export default function PeopleTab({
   onRecordPayment,
   onForgive,
   onDeleteSplit,
+  onSettleAll,
+  onSettleMonth,
   writeEnabled = false,
 }) {
   const [expandedPerson, setExpandedPerson] = useState(null);
   const [paymentInputs, setPaymentInputs] = useState({});
+  const [monthOverrides, setMonthOverrides] = useState({});
 
   // Aggregate balances per person
   const people = useMemo(() => {
@@ -44,7 +47,46 @@ export default function PeopleTab({
     return m;
   }, [expenses]);
 
+  // Group each person's splits by the expense's month (YYYY-MM), most recent first
+  const peopleWithMonths = useMemo(() => {
+    return people.map((p) => {
+      const monthMap = {};
+      for (const sp of p.splits) {
+        const exp = expenseMap[sp.expenseId];
+        const month = exp?.date ? exp.date.slice(0, 7) : "unknown";
+        if (!monthMap[month]) monthMap[month] = { month, splits: [], totalShare: 0, totalRepaid: 0, totalForgiven: 0 };
+        monthMap[month].splits.push(sp);
+        monthMap[month].totalShare += sp.share;
+        if (sp.status === "forgiven") {
+          monthMap[month].totalForgiven += sp.share - sp.repaid;
+        } else {
+          monthMap[month].totalRepaid += sp.repaid;
+        }
+      }
+      const months = Object.values(monthMap)
+        .map((m) => ({ ...m, balance: m.totalShare - m.totalRepaid - m.totalForgiven }))
+        .sort((a, b) => (a.month < b.month ? 1 : a.month > b.month ? -1 : 0));
+      return { ...p, months };
+    });
+  }, [people, expenseMap]);
+
   const totalOwed = people.reduce((s, p) => s + Math.max(0, p.balance), 0);
+
+  // A month is expanded by default when it still has a balance owed; settled
+  // months default to collapsed. Either can be toggled by clicking its header.
+  const isMonthExpanded = useCallback((person, month, defaultBalance) => {
+    const key = `${person}::${month}`;
+    if (key in monthOverrides) return monthOverrides[key];
+    return defaultBalance > 0;
+  }, [monthOverrides]);
+
+  const toggleMonth = useCallback((person, month, defaultBalance) => {
+    const key = `${person}::${month}`;
+    setMonthOverrides((prev) => ({
+      ...prev,
+      [key]: !isMonthExpanded(person, month, defaultBalance),
+    }));
+  }, [isMonthExpanded]);
 
   const handleRecordPayment = useCallback(async (person, splitId, amount) => {
     await onRecordPayment?.(splitId, amount);
@@ -90,16 +132,24 @@ export default function PeopleTab({
 
       {/* Person cards */}
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {people.map((p) => {
+        {peopleWithMonths.map((p) => {
           const isExpanded = expandedPerson === p.person;
           const isSettled = p.balance <= 0;
 
           return (
             <div key={p.person} className="card" style={{ padding: 0 }}>
               {/* Header */}
-              <button
+              <div
                 className="people-card-header"
+                role="button"
+                tabIndex={0}
                 onClick={() => setExpandedPerson(isExpanded ? null : p.person)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setExpandedPerson(isExpanded ? null : p.person);
+                  }
+                }}
                 aria-expanded={isExpanded}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -107,6 +157,21 @@ export default function PeopleTab({
                   <span style={{ fontWeight: 600, fontSize: 14, color: "var(--text)" }}>{p.person}</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  {writeEnabled && p.balance > 0 && (
+                    <button
+                      className="btn-ghost"
+                      style={{ fontSize: 11, padding: "4px 10px", minHeight: 28 }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (confirm(`Mark all of ${p.person}'s splits as settled (${formatCurrency(p.balance)})?`)) {
+                          onSettleAll?.(p.person);
+                        }
+                      }}
+                      title="Mark every outstanding split as fully paid"
+                    >
+                      Settle all
+                    </button>
+                  )}
                   {p.balance > 0 ? (
                     <span style={{ fontSize: 15, fontWeight: 700, color: "var(--red)", fontVariantNumeric: "tabular-nums" }}>
                       owes {formatCurrency(p.balance)}
@@ -120,122 +185,176 @@ export default function PeopleTab({
                   )}
                   <span className={`chevron${isExpanded ? " open" : ""}`} aria-hidden="true">▼</span>
                 </div>
-              </button>
+              </div>
 
               {/* Expanded detail */}
               {isExpanded && (
                 <div style={{ borderTop: "1px solid var(--border)", padding: "14px 16px" }}>
-                  {/* Split history table */}
-                  <div style={{ overflowX: "auto" }}>
-                  <table className="tx-table" style={{ fontSize: 12, marginBottom: 12, minWidth: 500 }}>
-                    <thead>
-                      <tr>
-                        <th style={{ textAlign: "left" }}>Date</th>
-                        <th style={{ textAlign: "left" }}>Expense</th>
-                        <th style={{ textAlign: "right" }}>Share</th>
-                        <th style={{ textAlign: "right" }}>Repaid</th>
-                        <th style={{ textAlign: "left" }}>Status</th>
-                        <th></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {p.splits.map((sp) => {
-                        const exp = expenseMap[sp.expenseId];
-                        const remaining = sp.share - sp.repaid;
-                        return (
-                          <tr key={sp.splitId}>
-                            <td style={{ color: "var(--text-muted)" }}>{exp?.date || "—"}</td>
-                            <td style={{ fontWeight: 500 }}>{exp?.vendor || exp?.name || sp.expenseId}</td>
-                            <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{formatCurrency(sp.share)}</td>
-                            <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: sp.repaid > 0 ? "var(--green)" : "var(--text-muted)" }}>
-                              {writeEnabled ? (
-                                <input
-                                  type="number"
-                                  step="0.01"
-                                  min="0"
-                                  value={paymentInputs[sp.splitId] ?? sp.repaid}
-                                  onChange={(e) => setPaymentInputs((prev) => ({ ...prev, [sp.splitId]: e.target.value }))}
-                                  onBlur={() => {
-                                    const val = parseFloat(paymentInputs[sp.splitId]);
-                                    if (!isNaN(val) && val !== sp.repaid) {
-                                      const amount = Math.max(val, 0);
-                                      const newStatus = amount > sp.share ? "overpaid" : amount >= sp.share ? "settled" : amount > 0 ? "partial" : "pending";
-                                      onRecordPayment?.(sp.splitId, amount, newStatus);
-                                    }
-                                    setPaymentInputs((prev) => { const n = { ...prev }; delete n[sp.splitId]; return n; });
-                                  }}
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter") e.target.blur();
-                                    if (e.key === "Escape") {
-                                      setPaymentInputs((prev) => { const n = { ...prev }; delete n[sp.splitId]; return n; });
-                                    }
-                                  }}
-                                  className="search-input"
-                                  style={{ width: 70, minHeight: 28, padding: "2px 6px", fontSize: 11, textAlign: "right" }}
-                                />
-                              ) : (
-                                formatCurrency(sp.repaid)
-                              )}
-                            </td>
-                            <td>
-                              <span className={`people-status people-status-${sp.status}`}>
-                                {sp.status}
-                              </span>
-                            </td>
-                            <td style={{ textAlign: "right" }}>
-                              {writeEnabled && (
-                                <div style={{ display: "flex", gap: 4, alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap" }}>
-                                  {/* Settle + Forgive: show when there's unpaid balance and not already forgiven */}
-                                  {remaining > 0 && sp.status !== "forgiven" && (
-                                    <>
-                                      <button
-                                        className="btn-ghost"
-                                        style={{ fontSize: 10, padding: "3px 8px", minHeight: 28 }}
-                                        onClick={() => onRecordPayment?.(sp.splitId, sp.share, "settled")}
-                                        title="Mark fully paid"
-                                      >
-                                        Settle
-                                      </button>
-                                      <button
-                                        className="btn-ghost"
-                                        style={{ fontSize: 10, padding: "3px 8px", minHeight: 28, color: "var(--amber)" }}
-                                        onClick={() => handleForgive(sp)}
-                                        title="Forgive remaining"
-                                      >
-                                        Forgive
-                                      </button>
-                                    </>
-                                  )}
-                                  {/* Reset: show on ANY non-pending status (settled, partial, forgiven, overpaid) */}
-                                  {sp.status !== "pending" && (
-                                    <button
-                                      className="btn-ghost"
-                                      style={{ fontSize: 10, padding: "3px 8px", minHeight: 28, color: "var(--red)" }}
-                                      onClick={() => onRecordPayment?.(sp.splitId, 0, "pending")}
-                                      title="Reset to unpaid"
-                                    >
-                                      Reset
-                                    </button>
-                                  )}
-                                  <button
-                                    className="btn-ghost"
-                                    style={{ fontSize: 10, padding: "3px 8px", minHeight: 28, color: "var(--red)", opacity: 0.6 }}
-                                    onClick={() => {
-                                      if (confirm(`Remove this split for ${sp.person}?`)) onDeleteSplit?.(sp.splitId);
-                                    }}
-                                    title="Delete this split entirely"
-                                  >
-                                    Delete
-                                  </button>
-                                </div>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                  </div>
+                  {/* Month groups */}
+                  {p.months.map((mg) => {
+                    const monthExpanded = isMonthExpanded(p.person, mg.month, mg.balance);
+                    return (
+                      <div key={mg.month} style={{ marginBottom: 10, border: "1px solid var(--border)", borderRadius: 8 }}>
+                        <div
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => toggleMonth(p.person, mg.month, mg.balance)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              toggleMonth(p.person, mg.month, mg.balance);
+                            }
+                          }}
+                          aria-expanded={monthExpanded}
+                          style={{
+                            width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+                            padding: "8px 12px", cursor: "pointer", font: "inherit",
+                          }}
+                        >
+                          <span style={{ fontWeight: 600, fontSize: 12, color: "var(--text)" }}>
+                            {mg.month === "unknown" ? "No date" : formatMonthLabel(mg.month, false)}
+                          </span>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            {writeEnabled && mg.balance > 0 && (
+                              <button
+                                className="btn-ghost"
+                                style={{ fontSize: 10, padding: "3px 8px", minHeight: 26 }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (confirm(`Mark ${p.person}'s ${formatMonthLabel(mg.month, false)} splits as settled (${formatCurrency(mg.balance)})?`)) {
+                                    onSettleMonth?.(p.person, mg.month);
+                                  }
+                                }}
+                                title="Mark this month's outstanding splits as fully paid"
+                              >
+                                Settle this month
+                              </button>
+                            )}
+                            <span style={{
+                              fontSize: 12, fontWeight: 600, fontVariantNumeric: "tabular-nums",
+                              color: mg.balance > 0 ? "var(--red)" : mg.balance < 0 ? "var(--green)" : "var(--text-muted)",
+                            }}>
+                              {mg.balance > 0 ? `owes ${formatCurrency(mg.balance)}` : mg.balance < 0 ? `overpaid ${formatCurrency(Math.abs(mg.balance))}` : "settled ✓"}
+                            </span>
+                            <span className={`chevron${monthExpanded ? " open" : ""}`} aria-hidden="true">▼</span>
+                          </div>
+                        </div>
+
+                        {monthExpanded && (
+                          <div style={{ overflowX: "auto", borderTop: "1px solid var(--border)" }}>
+                          <table className="tx-table" style={{ fontSize: 12, minWidth: 500 }}>
+                            <thead>
+                              <tr>
+                                <th style={{ textAlign: "left" }}>Date</th>
+                                <th style={{ textAlign: "left" }}>Expense</th>
+                                <th style={{ textAlign: "right" }}>Share</th>
+                                <th style={{ textAlign: "right" }}>Repaid</th>
+                                <th style={{ textAlign: "left" }}>Status</th>
+                                <th></th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {mg.splits.map((sp) => {
+                                const exp = expenseMap[sp.expenseId];
+                                const remaining = sp.share - sp.repaid;
+                                return (
+                                  <tr key={sp.splitId}>
+                                    <td style={{ color: "var(--text-muted)" }}>{exp?.date || "—"}</td>
+                                    <td style={{ fontWeight: 500 }}>{exp?.vendor || exp?.name || sp.expenseId}</td>
+                                    <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{formatCurrency(sp.share)}</td>
+                                    <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: sp.repaid > 0 ? "var(--green)" : "var(--text-muted)" }}>
+                                      {writeEnabled ? (
+                                        <input
+                                          type="number"
+                                          step="0.01"
+                                          min="0"
+                                          value={paymentInputs[sp.splitId] ?? sp.repaid}
+                                          onChange={(e) => setPaymentInputs((prev) => ({ ...prev, [sp.splitId]: e.target.value }))}
+                                          onBlur={() => {
+                                            const val = parseFloat(paymentInputs[sp.splitId]);
+                                            if (!isNaN(val) && val !== sp.repaid) {
+                                              const amount = Math.max(val, 0);
+                                              const newStatus = amount > sp.share ? "overpaid" : amount >= sp.share ? "settled" : amount > 0 ? "partial" : "pending";
+                                              onRecordPayment?.(sp.splitId, amount, newStatus);
+                                            }
+                                            setPaymentInputs((prev) => { const n = { ...prev }; delete n[sp.splitId]; return n; });
+                                          }}
+                                          onKeyDown={(e) => {
+                                            if (e.key === "Enter") e.target.blur();
+                                            if (e.key === "Escape") {
+                                              setPaymentInputs((prev) => { const n = { ...prev }; delete n[sp.splitId]; return n; });
+                                            }
+                                          }}
+                                          className="search-input"
+                                          style={{ width: 70, minHeight: 28, padding: "2px 6px", fontSize: 11, textAlign: "right" }}
+                                        />
+                                      ) : (
+                                        formatCurrency(sp.repaid)
+                                      )}
+                                    </td>
+                                    <td>
+                                      <span className={`people-status people-status-${sp.status}`}>
+                                        {sp.status}
+                                      </span>
+                                    </td>
+                                    <td style={{ textAlign: "right" }}>
+                                      {writeEnabled && (
+                                        <div style={{ display: "flex", gap: 4, alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap" }}>
+                                          {/* Settle + Forgive: show when there's unpaid balance and not already forgiven */}
+                                          {remaining > 0 && sp.status !== "forgiven" && (
+                                            <>
+                                              <button
+                                                className="btn-ghost"
+                                                style={{ fontSize: 10, padding: "3px 8px", minHeight: 28 }}
+                                                onClick={() => onRecordPayment?.(sp.splitId, sp.share, "settled")}
+                                                title="Mark fully paid"
+                                              >
+                                                Settle
+                                              </button>
+                                              <button
+                                                className="btn-ghost"
+                                                style={{ fontSize: 10, padding: "3px 8px", minHeight: 28, color: "var(--amber)" }}
+                                                onClick={() => handleForgive(sp)}
+                                                title="Forgive remaining"
+                                              >
+                                                Forgive
+                                              </button>
+                                            </>
+                                          )}
+                                          {/* Reset: show on ANY non-pending status (settled, partial, forgiven, overpaid) */}
+                                          {sp.status !== "pending" && (
+                                            <button
+                                              className="btn-ghost"
+                                              style={{ fontSize: 10, padding: "3px 8px", minHeight: 28, color: "var(--red)" }}
+                                              onClick={() => onRecordPayment?.(sp.splitId, 0, "pending")}
+                                              title="Reset to unpaid"
+                                            >
+                                              Reset
+                                            </button>
+                                          )}
+                                          <button
+                                            className="btn-ghost"
+                                            style={{ fontSize: 10, padding: "3px 8px", minHeight: 28, color: "var(--red)", opacity: 0.6 }}
+                                            onClick={() => {
+                                              if (confirm(`Remove this split for ${sp.person}?`)) onDeleteSplit?.(sp.splitId);
+                                            }}
+                                            title="Delete this split entirely"
+                                          >
+                                            Delete
+                                          </button>
+                                        </div>
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
 
                   {/* Summary */}
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--text-muted)", borderTop: "1px solid var(--border)", paddingTop: 8, flexWrap: "wrap", gap: 4 }}>
