@@ -2,6 +2,7 @@
 import { useState, useMemo, useCallback } from "react";
 import { formatCurrency, formatMonthLabel } from "../lib/constants";
 import EmptyState from "./EmptyState";
+import NotesModal from "./NotesModal";
 
 export default function PeopleTab({
   expenses = [],
@@ -12,10 +13,14 @@ export default function PeopleTab({
   onSettleAll,
   onSettleMonth,
   writeEnabled = false,
+  onUpdateExpense,
+  photoCounts = {},
+  onPhotosChanged,
 }) {
   const [expandedPerson, setExpandedPerson] = useState(null);
   const [paymentInputs, setPaymentInputs] = useState({});
   const [monthOverrides, setMonthOverrides] = useState({});
+  const [notesExpenseId, setNotesExpenseId] = useState(null);
 
   // Aggregate balances per person
   const people = useMemo(() => {
@@ -159,7 +164,7 @@ export default function PeopleTab({
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   {writeEnabled && p.balance > 0 && (
                     <button
-                      className="btn-ghost"
+                      className="btn-ghost mobile-tap-target"
                       style={{ fontSize: 11, padding: "4px 10px", minHeight: 28 }}
                       onClick={(e) => {
                         e.stopPropagation();
@@ -217,7 +222,7 @@ export default function PeopleTab({
                           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                             {writeEnabled && mg.balance > 0 && (
                               <button
-                                className="btn-ghost"
+                                className="btn-ghost mobile-tap-target"
                                 style={{ fontSize: 10, padding: "3px 8px", minHeight: 26 }}
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -260,7 +265,40 @@ export default function PeopleTab({
                                 return (
                                   <tr key={sp.splitId}>
                                     <td style={{ color: "var(--text-muted)" }}>{exp?.date || "—"}</td>
-                                    <td style={{ fontWeight: 500 }}>{exp?.vendor || exp?.name || sp.expenseId}</td>
+                                    <td style={{ fontWeight: 500, maxWidth: 160 }}>
+                                      {exp ? (
+                                        <span
+                                          role="button"
+                                          tabIndex={0}
+                                          onClick={() => setNotesExpenseId(sp.expenseId)}
+                                          onKeyDown={(e) => {
+                                            if (e.key === "Enter" || e.key === " ") {
+                                              e.preventDefault();
+                                              setNotesExpenseId(sp.expenseId);
+                                            }
+                                          }}
+                                          style={{ cursor: "pointer", display: "block" }}
+                                          aria-label={`Open notes for ${exp.vendor || exp.name}`}
+                                        >
+                                          <span style={{ display: "block" }}>{exp.vendor || exp.name}</span>
+                                          {(exp.notes || (photoCounts[sp.expenseId] || 0) > 0) && (
+                                            <span style={{
+                                              display: "flex", alignItems: "center", gap: 4, fontWeight: 400,
+                                              fontSize: 10.5, color: "var(--text-muted)", marginTop: 1,
+                                            }}>
+                                              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 110 }}>
+                                                {exp.notes}
+                                              </span>
+                                              {(photoCounts[sp.expenseId] || 0) > 0 && (
+                                                <span style={{ flexShrink: 0 }}>📎{photoCounts[sp.expenseId]}</span>
+                                              )}
+                                            </span>
+                                          )}
+                                        </span>
+                                      ) : (
+                                        sp.expenseId
+                                      )}
+                                    </td>
                                     <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{formatCurrency(sp.share)}</td>
                                     <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: sp.repaid > 0 ? "var(--green)" : "var(--text-muted)" }}>
                                       {writeEnabled ? (
@@ -285,7 +323,7 @@ export default function PeopleTab({
                                               setPaymentInputs((prev) => { const n = { ...prev }; delete n[sp.splitId]; return n; });
                                             }
                                           }}
-                                          className="search-input"
+                                          className="search-input mobile-tap-target"
                                           style={{ width: 70, minHeight: 28, padding: "2px 6px", fontSize: 11, textAlign: "right" }}
                                         />
                                       ) : (
@@ -304,7 +342,7 @@ export default function PeopleTab({
                                           {remaining > 0 && sp.status !== "forgiven" && (
                                             <>
                                               <button
-                                                className="btn-ghost"
+                                                className="btn-ghost mobile-tap-target"
                                                 style={{ fontSize: 10, padding: "3px 8px", minHeight: 28 }}
                                                 onClick={() => onRecordPayment?.(sp.splitId, sp.share, "settled")}
                                                 title="Mark fully paid"
@@ -312,7 +350,7 @@ export default function PeopleTab({
                                                 Settle
                                               </button>
                                               <button
-                                                className="btn-ghost"
+                                                className="btn-ghost mobile-tap-target"
                                                 style={{ fontSize: 10, padding: "3px 8px", minHeight: 28, color: "var(--amber)" }}
                                                 onClick={() => handleForgive(sp)}
                                                 title="Forgive remaining"
@@ -324,7 +362,7 @@ export default function PeopleTab({
                                           {/* Reset: show on ANY non-pending status (settled, partial, forgiven, overpaid) */}
                                           {sp.status !== "pending" && (
                                             <button
-                                              className="btn-ghost"
+                                              className="btn-ghost mobile-tap-target"
                                               style={{ fontSize: 10, padding: "3px 8px", minHeight: 28, color: "var(--red)" }}
                                               onClick={() => onRecordPayment?.(sp.splitId, 0, "pending")}
                                               title="Reset to unpaid"
@@ -333,7 +371,7 @@ export default function PeopleTab({
                                             </button>
                                           )}
                                           <button
-                                            className="btn-ghost"
+                                            className="btn-ghost mobile-tap-target"
                                             style={{ fontSize: 10, padding: "3px 8px", minHeight: 28, color: "var(--red)", opacity: 0.6 }}
                                             onClick={() => {
                                               if (confirm(`Remove this split for ${sp.person}?`)) onDeleteSplit?.(sp.splitId);
@@ -371,6 +409,15 @@ export default function PeopleTab({
           );
         })}
       </div>
+
+      {notesExpenseId && expenseMap[notesExpenseId] && (
+        <NotesModal
+          expense={expenseMap[notesExpenseId]}
+          writeEnabled={writeEnabled}
+          onSave={onUpdateExpense}
+          onClose={() => { setNotesExpenseId(null); onPhotosChanged?.(); }}
+        />
+      )}
     </div>
   );
 }

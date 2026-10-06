@@ -41,6 +41,7 @@ export default function Dashboard() {
   const [lastUpdated, setLastUpdated] = useState(null);
   const [writeEnabled, setWriteEnabled] = useState(false);
   const [splits, setSplits] = useState([]);
+  const [photoCounts, setPhotoCounts] = useState({});
   const [activeTab, setActiveTab] = useState(0);
   const [budgets, setBudgets] = useState(() => getBudgets());
   const [theme, setThemeState] = useState(() => getTheme());
@@ -78,6 +79,32 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => { fetchExpenses(); }, [fetchExpenses]);
+
+  // ── Photo counts (one request, grouped by expense id) ──────────
+  const fetchPhotoCounts = useCallback(async () => {
+    try {
+      const resp = await fetch("/api/photos");
+      if (!resp.ok) {
+        // Drive not configured yet (503) or any other failure — degrade to
+        // an empty map rather than breaking the page.
+        setPhotoCounts({});
+        return;
+      }
+      const rows = await resp.json();
+      const list = Array.isArray(rows) ? rows : [];
+      const counts = {};
+      for (const row of list) {
+        const expId = row.ExpenseID ?? row.expenseId;
+        if (!expId) continue;
+        counts[expId] = (counts[expId] || 0) + 1;
+      }
+      setPhotoCounts(counts);
+    } catch {
+      setPhotoCounts({});
+    }
+  }, []);
+
+  useEffect(() => { fetchPhotoCounts(); }, [fetchPhotoCounts]);
 
   // ── Computed data ────────────────────────────────────────────
   const byMonth = useMemo(() => {
@@ -391,6 +418,8 @@ export default function Dashboard() {
           onAdd={handleAddExpense}
           onDelete={handleDeleteExpense}
           splits={splits}
+          photoCounts={photoCounts}
+          onPhotosChanged={fetchPhotoCounts}
           onSplit={handleSplitExpense}
           onSplitMonths={handleSplitMonths}
           budgets={budgets}
@@ -406,6 +435,9 @@ export default function Dashboard() {
           onSettleAll={handleSettleAllForPerson}
           onSettleMonth={handleSettleMonthForPerson}
           writeEnabled={writeEnabled}
+          onUpdateExpense={handleUpdateExpense}
+          photoCounts={photoCounts}
+          onPhotosChanged={fetchPhotoCounts}
         />
       );
       case 2: return <TrendsTab {...tabProps} />;

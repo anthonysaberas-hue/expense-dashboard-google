@@ -12,6 +12,7 @@ import {
   deleteSplit,
   isWriteConfigured,
 } from "../../lib/sheets";
+import { readAllPhotos, softDeletePhoto } from "../../lib/photos";
 
 function normalize(row) {
   let date = row.Date || null;
@@ -219,6 +220,22 @@ export async function DELETE(request) {
         await deleteSplit(s.SplitID);
       }
     } catch { /* Splits tab may not exist */ }
+
+    // Soft-delete associated photos (avoid orphaning their Drive references). Each
+    // photo gets its own try/catch: a 429 on one must not abandon the rest as live
+    // orphan rows, and this outer try/catch's only job is to tolerate a missing
+    // Photos tab — it must never abort the expense deletion either way.
+    try {
+      const photos = await readAllPhotos();
+      const orphanPhotos = photos.filter((p) => p.ExpenseID === id);
+      for (const p of orphanPhotos) {
+        try {
+          await softDeletePhoto(p.ID);
+        } catch (e) {
+          console.error(`Failed to soft-delete photo ${p.ID} for expense ${id}:`, e);
+        }
+      }
+    } catch { /* Photos tab may not exist */ }
 
     await deleteRow(id);
 

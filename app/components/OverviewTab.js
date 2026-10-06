@@ -3,6 +3,7 @@ import { useMemo, useState, useCallback, useEffect } from "react";
 import { getCatColor, formatCurrency, formatMonthLabel, MONTHS, getNetAmount, getPrevMonths } from "../lib/constants";
 import { safeGet } from "../lib/storage";
 import EditableCell from "./EditableCell";
+import NotesCell from "./NotesCell";
 import AddExpenseModal from "./AddExpenseModal";
 import SplitModal from "./SplitModal";
 import UndoToast from "./UndoToast";
@@ -174,6 +175,7 @@ function CategoryBreakdown({ catTotals, total, monthData, prevCatTotals, budgets
 
                 {/* Transactions */}
                 {transactions.length > 0 ? (
+                  <div style={{ overflowX: "auto" }}>
                   <table className="tx-table" style={{ fontSize: 12 }}>
                     <thead>
                       <tr>
@@ -192,6 +194,7 @@ function CategoryBreakdown({ catTotals, total, monthData, prevCatTotals, budgets
                       ))}
                     </tbody>
                   </table>
+                  </div>
                 ) : (
                   <p style={{ color: "var(--text-muted)", fontSize: 12, margin: 0 }}>No transactions.</p>
                 )}
@@ -242,6 +245,8 @@ export default function OverviewTab({
   onDelete,
   searchRef,
   splits = [],
+  photoCounts = {},
+  onPhotosChanged,
   onSplit,
   onSplitMonths,
   budgets = {},
@@ -592,7 +597,7 @@ export default function OverviewTab({
                         })()}
                       </td>
                       <td style={{ fontSize: 12, color: "var(--text-muted)", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis" }}>
-                        <EditableCell value={e.notes} field="notes" onSave={(f, v) => handleCellSave(e, f, v)} disabled={!writeEnabled} />
+                        <NotesCell expense={e} photoCount={photoCounts[e.id] || 0} writeEnabled={writeEnabled} onSave={(id, patch) => handleCellSave(e, "notes", patch.notes)} onPhotosChanged={onPhotosChanged} />
                       </td>
                       {writeEnabled && (
                         <td style={{ textAlign: "center", width: 50 }}>

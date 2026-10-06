@@ -189,7 +189,7 @@ export default function DateRangePicker({ startDate, endDate, onChange }) {
                   {pickStart ? `From ${fmtShort(pickStart)} → pick end date` : "Click a start date"}
                 </span>
                 <div style={{ display: "flex", gap: 6 }}>
-                  <button onClick={() => { setPickStart(null); setOpen(false); }} className="btn-ghost" style={{ padding: "4px 12px", minHeight: 32, fontSize: 12 }}>Cancel</button>
+                  <button onClick={() => { setPickStart(null); setOpen(false); }} className="btn-ghost mobile-tap-target" style={{ padding: "4px 12px", minHeight: 32, fontSize: 12 }}>Cancel</button>
                 </div>
               </div>
             </div>

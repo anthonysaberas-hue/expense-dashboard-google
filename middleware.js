@@ -6,10 +6,14 @@ export function middleware(request) {
   // Allow auth endpoint and static assets
   if (
     pathname === "/login" ||
+    pathname === "/privacy" ||
     pathname === "/api/auth" ||
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon") ||
-    pathname.endsWith(".ico")
+    pathname.endsWith(".ico") ||
+    pathname === "/manifest.webmanifest" ||
+    pathname.startsWith("/icon-") ||
+    pathname === "/apple-touch-icon.png"
   ) {
     return NextResponse.next();
   }
@@ -33,5 +37,7 @@ export function middleware(request) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|privacy|manifest.webmanifest|icon-|apple-touch-icon).*)",
+  ],
 };

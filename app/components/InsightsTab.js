@@ -99,6 +99,7 @@ function BudgetRow({ cat, amount, limit, onEdit, onDelete }) {
           ) : (
             <button
               onClick={() => setEditing(true)}
+              className="mobile-tap-target"
               style={{
                 background: "none", border: "1px dashed var(--border)",
                 borderRadius: "var(--radius-sm)", padding: "2px 8px",

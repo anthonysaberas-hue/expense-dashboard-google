@@ -121,6 +121,7 @@ body {
 /* ========== APP SHELL ========== */
 .app-shell {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
 }
@@ -132,6 +133,7 @@ body {
   position: sticky;
   top: 0;
   z-index: 100;
+  padding-top: env(safe-area-inset-top);
 }
 .header-inner {
   max-width: 920px;
@@ -142,6 +144,12 @@ body {
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
+}
+/* .tabbar-desktop only renders at >=640px (see its display:none below that),
+   so keep the header single-line from 640px up — otherwise flex-wrap can
+   push it to two lines while the tabbar's sticky offset still assumes one. */
+@media (min-width: 640px) {
+  .header-inner { flex-wrap: nowrap; }
 }
 .header-title {
   font-size: 18px;
@@ -306,7 +314,8 @@ body {
 @media (max-width: 639px) {
   .tabbar-desktop { display: none; }
   .tabbar-mobile { display: block; }
-  .main-content { padding-bottom: calc(60px + env(safe-area-inset-bottom)); }
+  .main-content { padding: 14px; padding-bottom: calc(60px + env(safe-area-inset-bottom)); }
+  .card { padding: 12px; }
 }
 
 /* ========== MAIN CONTENT ========== */
@@ -1164,10 +1173,24 @@ body {
   }
 }
 
+/* ========== MOBILE TAP TARGET OVERRIDE ========== */
+/* Small inline-styled controls (dense tables, settle/forgive/reset buttons,
+   select pickers) set their own compact min-height via the style attribute,
+   which beats a plain class. Add this class alongside them to restore the
+   44px touch-target floor on mobile only, leaving desktop density intact. */
+@media (max-width: 639px) {
+  .mobile-tap-target {
+    min-height: 44px !important;
+    min-width: 44px !important;
+  }
+}
+
 /* ========== MODAL ========== */
 .modal-backdrop {
   position: fixed;
   inset: 0;
+  height: 100vh;
+  height: 100dvh;
   background: rgba(0,0,0,0.4);
   z-index: 500;
   display: flex;
@@ -1183,8 +1206,17 @@ body {
   width: 100%;
   max-width: 480px;
   max-height: 90vh;
+  max-height: 90dvh;
   overflow-y: auto;
+  overscroll-behavior: contain;
   animation: slide-up 0.2s ease-out;
+}
+/* Wider variant for modals with denser content (e.g. CSV import preview).
+   Placed before the mobile override below so the bottom-sheet max-width:100%
+   still wins on small screens. */
+.modal-card-wide {
+  max-width: 920px;
+  width: 96%;
 }
 .modal-header {
   display: flex;
@@ -1221,8 +1253,10 @@ body {
   .modal-backdrop { align-items: flex-end; padding: 0; }
   .modal-card {
     max-width: 100%;
+    width: 100%;
     border-radius: var(--radius-md) var(--radius-md) 0 0;
     max-height: 85vh;
+    max-height: 85dvh;
   }
 }
 

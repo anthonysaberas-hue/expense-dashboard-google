@@ -256,7 +256,7 @@ export default function CsvImportModal({ onClose, onDone }) {
 
   return (
     <div className="modal-backdrop" onClick={(e) => e.target === e.currentTarget && !importing && onClose()}>
-      <div className="modal-card" role="dialog" aria-modal="true" aria-label="Import CSV" style={{ maxWidth: 920, width: "96%" }}>
+      <div className="modal-card modal-card-wide" role="dialog" aria-modal="true" aria-label="Import CSV">
         <div className="modal-header">
           <h2 className="modal-title">Sync Holdings from CSV</h2>
           <button onClick={onClose} className="modal-close" aria-label="Close" disabled={importing}>×</button>

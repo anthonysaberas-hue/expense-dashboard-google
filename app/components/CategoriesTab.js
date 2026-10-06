@@ -85,6 +85,7 @@ function CategoryCard({ cat, amount, total, prevAmount, sparkData, budgetLimit, 
           {transactions.length === 0 ? (
             <p style={{ color: "var(--text-muted)", fontSize: 13, margin: 0 }}>No transactions.</p>
           ) : (
+            <div style={{ overflowX: "auto" }}>
             <table className="tx-table" style={{ fontSize: 12 }} aria-label={`${cat} transactions`}>
               <thead>
                 <tr>
@@ -105,6 +106,7 @@ function CategoryCard({ cat, amount, total, prevAmount, sparkData, budgetLimit, 
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
       )}

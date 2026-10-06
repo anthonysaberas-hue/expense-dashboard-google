@@ -270,7 +270,7 @@ export default function CategoryManager({ monthData = [], onBatchUpdate }) {
           <select
             value={mergeTarget}
             onChange={(e) => setMergeTarget(e.target.value)}
-            className="filter-select"
+            className="filter-select mobile-tap-target"
             style={{ fontSize: 12, minHeight: 36, padding: "4px 8px" }}
           >
             <option value="">Select category…</option>
@@ -278,10 +278,10 @@ export default function CategoryManager({ monthData = [], onBatchUpdate }) {
               <option key={c}>{c}</option>
             ))}
           </select>
-          <button onClick={handleMerge} className="btn-primary" style={{ padding: "4px 12px", fontSize: 12, minHeight: 36 }} disabled={!mergeTarget}>
+          <button onClick={handleMerge} className="btn-primary mobile-tap-target" style={{ padding: "4px 12px", fontSize: 12, minHeight: 36 }} disabled={!mergeTarget}>
             Merge
           </button>
-          <button onClick={() => setMergeSource(null)} className="btn-ghost" style={{ padding: "4px 12px", fontSize: 12, minHeight: 36 }}>
+          <button onClick={() => setMergeSource(null)} className="btn-ghost mobile-tap-target" style={{ padding: "4px 12px", fontSize: 12, minHeight: 36 }}>
             Cancel
           </button>
         </div>
