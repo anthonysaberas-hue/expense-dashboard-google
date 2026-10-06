@@ -27,8 +27,32 @@ export function needsConverting(file) {
   return !DISPLAYABLE.has(String(file && file.type).toLowerCase());
 }
 
+// Transient on Google's side. A resumable PUT that comes back 5xx or 429 has not
+// failed, it has merely not succeeded yet — retrying the whole session is correct and
+// cheap, and without it a single blip surfaces to the user as a dead-end error with a
+// photo they have to re-pick by hand.
+const RETRYABLE_UPLOAD = new Set([429, 500, 502, 503, 504]);
+const UPLOAD_ATTEMPTS = 3;
+const napFor = (attempt) => 800 * 2 ** (attempt - 1) + Math.floor(Math.random() * 300);
+
 // → { id } of the new Drive file. `onProgress` gets 0..1 when the browser reports it.
-export async function uploadToDrive(blob, { token, folder, name, onProgress }) {
+export async function uploadToDrive(blob, opts) {
+  let lastErr = null;
+  for (let attempt = 1; attempt <= UPLOAD_ATTEMPTS; attempt += 1) {
+    try {
+      return await attemptUpload(blob, opts);
+    } catch (e) {
+      lastErr = e;
+      if (attempt >= UPLOAD_ATTEMPTS || !RETRYABLE_UPLOAD.has(e.driveStatus)) throw e;
+      // A fresh session each time: a 5xx can leave the old upload_id unusable.
+      if (opts && opts.onProgress) opts.onProgress(0);
+      await new Promise((r) => setTimeout(r, napFor(attempt)));
+    }
+  }
+  throw lastErr;
+}
+
+async function attemptUpload(blob, { token, folder, name, onProgress }) {
   const start = await fetch(RESUMABLE, {
     method: "POST",
     headers: {
@@ -41,7 +65,7 @@ export async function uploadToDrive(blob, { token, folder, name, onProgress }) {
     },
     body: JSON.stringify({ name, parents: folder ? [folder] : undefined }),
   });
-  if (!start.ok) throw new Error(await driveError(start, "could not start the upload"));
+  if (!start.ok) throw tagged(await driveError(start, "could not start the upload"), start.status);
 
   const session = start.headers.get("location");
   if (!session) throw new Error("Drive did not return an upload session.");
@@ -65,7 +89,9 @@ export async function uploadToDrive(blob, { token, folder, name, onProgress }) {
         }
         return;
       }
-      reject(new Error(`Drive rejected the upload (${xhr.status}).`));
+      // Carry Google's own message through. Reporting only the status code turns a
+      // diagnosable failure into a guess.
+      reject(tagged(bodyMessage(xhr.responseText) || `Drive rejected the upload (${xhr.status}).`, xhr.status));
     };
     xhr.onerror = () => reject(new Error("The upload was interrupted."));
     xhr.onabort = () => reject(new Error("The upload was cancelled."));
@@ -79,5 +105,22 @@ async function driveError(res, fallback) {
     return (j && j.error && j.error.message) || `${fallback} (${res.status})`;
   } catch {
     return `${fallback} (${res.status})`;
+  }
+}
+
+// Marks an error with the HTTP status that caused it, so the retry loop can tell a
+// transient 503 from a permanent 403 without parsing message text.
+function tagged(message, status) {
+  const e = new Error(message);
+  e.driveStatus = status;
+  return e;
+}
+
+function bodyMessage(text) {
+  try {
+    const j = JSON.parse(text);
+    return (j && j.error && j.error.message) || null;
+  } catch {
+    return null;
   }
 }
