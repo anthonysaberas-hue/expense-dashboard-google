@@ -17,8 +17,6 @@ import { safeGet, safeSet } from "./lib/storage";
 import { applyTheme, getTheme } from "./lib/theme";
 import { formatMonthLabel } from "./lib/constants";
 
-const TAB_LABELS = ["Overview", "People", "Trends", "Insights", "Assets"];
-
 function SkeletonLoader() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
