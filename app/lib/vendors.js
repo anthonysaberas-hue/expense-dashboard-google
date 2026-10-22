@@ -3,12 +3,21 @@
 // counts), unless you pinned one in Settings. A single transaction's own
 // category always wins — these defaults only prefill new entries.
 
-// "PHARMAPRIX #1234", "Pharmaprix", " pharmaprix " → "pharmaprix"
-export function vendorKey(name) {
+// Store numbers: "#1234" anywhere, long digit runs, and trailing numbers
+// ("PHARMAPRIX 42") — they split one vendor into many
+function stripStoreNumbers(name) {
   return String(name || "")
+    .replace(/#\s*\d+/g, " ")
+    .replace(/\b\d{3,}\b/g, " ")
+    .replace(/(\s+\d+)+\s*$/, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// "PHARMAPRIX #1234", "Pharmaprix 42", " pharmaprix " → "pharmaprix"
+export function vendorKey(name) {
+  return stripStoreNumbers(name)
     .toLowerCase()
-    .replace(/#\s*\d+/g, " ")        // store numbers: #1234
-    .replace(/\b\d{3,}\b/g, " ")     // long digit runs: 04512
     .replace(/[^\p{L}\p{N}]+/gu, " ") // punctuation → space
     .trim()
     .replace(/\s+/g, " ");
@@ -29,7 +38,9 @@ export function buildVendorIndex(expenses = [], pinned = {}) {
     }
     v.count++;
     v.totalCents += Math.round((Number(e.netAmount ?? e.amount) || 0) * 100);
-    v.names[raw.trim()] = (v.names[raw.trim()] || 0) + 1;
+    // Display name: the most common spelling, minus store numbers
+    const display = stripStoreNumbers(raw) || raw.trim();
+    v.names[display] = (v.names[display] || 0) + 1;
     if ((e.date || "") > v.lastDate) v.lastDate = e.date || "";
     const cat = e.category;
     if (cat && cat !== "Uncategorized") {
