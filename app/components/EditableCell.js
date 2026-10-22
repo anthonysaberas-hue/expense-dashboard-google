@@ -1,5 +1,6 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
+import CategoryPicker from "./CategoryPicker";
 
 export default function EditableCell({
   value,
@@ -7,6 +8,7 @@ export default function EditableCell({
   type = "text",
   onSave,
   disabled = false,
+  options,
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value ?? "");
@@ -26,9 +28,9 @@ export default function EditableCell({
     if (!editing) setDraft(value ?? "");
   }, [value, editing]);
 
-  const handleSave = async () => {
+  const handleSave = async (picked) => {
     setEditing(false);
-    const newVal = type === "number" ? parseFloat(draft) || 0 : draft;
+    const newVal = picked !== undefined ? picked : type === "number" ? parseFloat(draft) || 0 : draft;
     if (newVal === value) return;
 
     setSaving(true);
@@ -59,6 +61,20 @@ export default function EditableCell({
     return <span className="editable-cell-disabled">{value ?? "—"}</span>;
   }
 
+  if (editing && type === "category") {
+    return (
+      <CategoryPicker
+        value={value ?? ""}
+        categories={options}
+        onSelect={(v) => handleSave(v)}
+        onCancel={() => setEditing(false)}
+        autoFocus
+        className="editable-input"
+        ariaLabel={`Edit ${field}`}
+      />
+    );
+  }
+
   if (editing) {
     return (
       <input
@@ -66,7 +82,7 @@ export default function EditableCell({
         type={type}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
-        onBlur={handleSave}
+        onBlur={() => handleSave()}
         onKeyDown={handleKeyDown}
         className="editable-input"
         step={type === "number" ? "0.01" : undefined}
