@@ -1536,3 +1536,35 @@ body {
   border: 1px solid var(--border);
   flex-wrap: wrap;
 }
+
+/* ========== CATEGORY PICKER ========== */
+.category-picker-list {
+  position: fixed;
+  z-index: 1000;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+.category-picker-option {
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+}
+.category-picker-option.active { background: var(--bg); }
+.category-picker-option.current { font-weight: 600; }
+.category-picker-option.add {
+  color: var(--green);
+  font-weight: 600;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 6px 6px;
+}

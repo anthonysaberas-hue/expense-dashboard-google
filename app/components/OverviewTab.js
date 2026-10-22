@@ -1,8 +1,8 @@
 "use client";
 import { useMemo, useState, useCallback, useEffect } from "react";
 import { getCatColor, formatCurrency, formatMonthLabel, MONTHS, getNetAmount, getPrevMonths } from "../lib/constants";
-import { safeGet } from "../lib/storage";
 import EditableCell from "./EditableCell";
+import { getAllCategories } from "../lib/categories";
 import NotesCell from "./NotesCell";
 import AddExpenseModal from "./AddExpenseModal";
 import SplitModal from "./SplitModal";
@@ -340,11 +340,7 @@ export default function OverviewTab({
 
   const categories = ["All", ...Array.from(new Set(monthData.map((e) => e.category))).sort()];
   // Read custom categories every render (localStorage is fast, ensures fresh data)
-  const allCategories = (() => {
-    const expCats = expenses.map((e) => e.category).filter(Boolean);
-    const customCats = Object.keys(safeGet("custom_categories", {}));
-    return [...new Set([...expCats, ...customCats])].sort();
-  })();
+  const allCategories = getAllCategories(expenses);
 
   const handleSort = (key) => {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -577,7 +573,7 @@ export default function OverviewTab({
                       </td>
                       <td>
                         <span className="cat-badge" style={{ background: getCatColor(e.category) + "18", color: getCatColor(e.category) }}>
-                          <EditableCell value={e.category} field="category" onSave={(f, v) => handleCellSave(e, f, v)} disabled={!writeEnabled} />
+                          <EditableCell value={e.category} field="category" type="category" options={allCategories} onSave={(f, v) => handleCellSave(e, f, v)} disabled={!writeEnabled} />
                         </span>
                       </td>
                       <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>

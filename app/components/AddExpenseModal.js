@@ -1,12 +1,13 @@
 "use client";
 import { useState } from "react";
+import CategoryPicker from "./CategoryPicker";
 
 export default function AddExpenseModal({ categories = [], onAdd, onClose }) {
   const [form, setForm] = useState({
     date: new Date().toISOString().split("T")[0],
     vendor: "",
     name: "",
-    category: categories[0] || "Uncategorized",
+    category: "Uncategorized",
     amount: "",
     repaid: "",
     notes: "",
@@ -136,17 +137,12 @@ export default function AddExpenseModal({ categories = [], onAdd, onClose }) {
           )}
           <div className="modal-field">
             <label className="modal-label">Category</label>
-            <select
+            <CategoryPicker
               value={form.category}
-              onChange={(e) => handleChange("category", e.target.value)}
-              className="filter-select"
+              categories={categories}
+              onSelect={(c) => handleChange("category", c)}
               style={{ width: "100%" }}
-            >
-              {categories.map((c) => (
-                <option key={c}>{c}</option>
-              ))}
-              <option>Uncategorized</option>
-            </select>
+            />
           </div>
           <div className="modal-field">
             <label className="modal-label">Notes</label>
