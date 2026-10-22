@@ -5,6 +5,7 @@ import EditableCell from "./EditableCell";
 import { getAllCategories } from "../lib/categories";
 import { toCents, fromCents, summarizeSplits } from "../lib/money";
 import { useIsPhone } from "../lib/useMediaQuery";
+import { defaultCategoryFor } from "../lib/vendors";
 import NotesCell from "./NotesCell";
 import AddExpenseModal from "./AddExpenseModal";
 import SplitModal from "./SplitModal";
@@ -252,6 +253,7 @@ export default function OverviewTab({
   onSplit,
   onSplitMonths,
   budgets = {},
+  vendorIndex = [],
 }) {
   const [excludedCats, setExcludedCats] = useState(new Set());
   const [excludedIds, setExcludedIds] = useState(new Set());
@@ -439,6 +441,23 @@ export default function OverviewTab({
     );
   };
 
+  // Uncategorized row whose vendor has a usual category → one-tap fix
+  const renderCategorySuggestion = (e) => {
+    if (!writeEnabled || e.category !== "Uncategorized") return null;
+    const suggested = defaultCategoryFor(vendorIndex, e.vendor || e.name);
+    if (!suggested) return null;
+    return (
+      <button
+        className="cat-suggest"
+        onClick={() => handleCellSave(e, "category", suggested)}
+        title={`Usual category for ${e.vendor || e.name}`}
+        aria-label={`Set category to ${suggested}`}
+      >
+        → {suggested}
+      </button>
+    );
+  };
+
   const SORTS = [
     ["date:desc", "Newest first"],
     ["date:asc", "Oldest first"],
@@ -610,6 +629,7 @@ export default function OverviewTab({
                               <span className="cat-badge" style={{ background: getCatColor(e.category) + "18", color: getCatColor(e.category) }}>
                                 <EditableCell value={e.category} field="category" type="category" options={allCategories} onSave={(f, v) => handleCellSave(e, f, v)} disabled={!writeEnabled} />
                               </span>
+                              {renderCategorySuggestion(e)}
                             </div>
                           </div>
                           <div className="tx-card-right">
@@ -694,6 +714,7 @@ export default function OverviewTab({
                         <span className="cat-badge" style={{ background: getCatColor(e.category) + "18", color: getCatColor(e.category) }}>
                           <EditableCell value={e.category} field="category" type="category" options={allCategories} onSave={(f, v) => handleCellSave(e, f, v)} disabled={!writeEnabled} />
                         </span>
+                        {renderCategorySuggestion(e)}
                       </td>
                       <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
                         {renderPaidBack(e)}
@@ -718,6 +739,7 @@ export default function OverviewTab({
         {showAddModal && (
           <AddExpenseModal
             categories={allCategories}
+            vendorIndex={vendorIndex}
             onAdd={(data) => onAdd?.(data)}
             onClose={() => setShowAddModal(false)}
           />

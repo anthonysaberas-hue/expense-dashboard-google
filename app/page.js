@@ -7,13 +7,15 @@ import TrendsTab from "./components/TrendsTab";
 import InsightsTab from "./components/InsightsTab";
 import PeopleTab from "./components/PeopleTab";
 import { allocatePayment } from "./lib/allocatePayment";
-import { withNetAmounts, buildInstallments, toCents } from "./lib/money";
+import { withNetAmounts, buildInstallments, toCents, localDateString } from "./lib/money";
 import AssetsTab from "./components/AssetsTab";
 import ErrorBoundary from "./components/ErrorBoundary";
 import DateRangePicker from "./components/DateRangePicker";
 import MonthSwitcher, { useMonthSwipe } from "./components/MonthSwitcher";
 import AddExpenseModal from "./components/AddExpenseModal";
+import SettingsModal from "./components/SettingsModal";
 import { getAllCategories } from "./lib/categories";
+import { buildVendorIndex } from "./lib/vendors";
 import TopCategories from "./components/TopCategories";
 import { runInsights } from "./lib/insights";
 import { getBudgets, setBudget, deleteBudget } from "./lib/budgets";
@@ -52,9 +54,11 @@ export default function Dashboard() {
   const [theme, setThemeState] = useState(() => getTheme());
   const [dismissedInsights, setDismissedInsights] = useState(() => getSetting("dismissed_insights"));
   const [settingsReady, setSettingsReady] = useState(false);
-  const [, setSettingsVersion] = useState(0);
+  const [settingsVersion, setSettingsVersion] = useState(0);
   const [dateRange, setDateRange] = useState({ start: null, end: null });
   const [showQuickAdd, setShowQuickAdd] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const recurringChecked = useRef(false);
   const transactionsSearchRef = useRef(null);
 
   // ── Fetch ────────────────────────────────────────────────────
@@ -122,6 +126,13 @@ export default function Dashboard() {
 
   // Net amounts are recomputed on the client so local edits update totals instantly
   const expenses = useMemo(() => withNetAmounts(rawExpenses, splits), [rawExpenses, splits]);
+
+  // Every vendor with its usual category (learned, or pinned in Settings)
+  const vendorIndex = useMemo(
+    () => buildVendorIndex(expenses, getSetting("vendor_categories")),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [expenses, settingsVersion]
+  );
 
   // ── Photo counts (one request, grouped by expense id) ──────────
   const fetchPhotoCounts = useCallback(async () => {
@@ -424,6 +435,25 @@ export default function Dashboard() {
     enabled: [0, 2, 3].includes(activeTab),
   });
 
+  // Recurring payments: add anything due since the last run (the daily cron
+  // does this too; this covers days the cron hasn't run yet)
+  useEffect(() => {
+    if (!writeEnabled || loading || error || recurringChecked.current) return;
+    recurringChecked.current = true;
+    fetch("/api/recurring/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ today: localDateString() }),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d?.created > 0) fetchExpenses({ silent: true }); })
+      .catch(() => {});
+  }, [writeEnabled, loading, error, fetchExpenses]);
+
+  const handleAddRecurring = useCallback(async (item) => {
+    await save("/api/recurring", "POST", item);
+  }, [save]);
+
   // ── Tab rendering ─────────────────────────────────────────────
   const tabProps = { monthData, byMonth, monthKeys, selectedMonth, expenses };
 
@@ -445,6 +475,7 @@ export default function Dashboard() {
           onSplit={handleSplitExpense}
           onSplitMonths={handleSplitMonths}
           budgets={budgets}
+          vendorIndex={vendorIndex}
         />
       );
       case 1: return (
@@ -503,6 +534,14 @@ export default function Dashboard() {
             </p>
           </div>
           <div className="header-actions">
+            {!loading && !error && (
+              <button onClick={() => setShowSettings(true)} className="icon-btn" aria-label="Settings" title="Vendors & recurring payments">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="3" />
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                </svg>
+              </button>
+            )}
             <button
               onClick={toggleTheme}
               className="icon-btn"
@@ -599,8 +638,21 @@ export default function Dashboard() {
       {showQuickAdd && (
         <AddExpenseModal
           categories={getAllCategories(expenses)}
+          vendorIndex={vendorIndex}
           onAdd={handleAddExpense}
+          onAddRecurring={handleAddRecurring}
           onClose={() => setShowQuickAdd(false)}
+        />
+      )}
+
+      {showSettings && (
+        <SettingsModal
+          vendorIndex={vendorIndex}
+          categories={getAllCategories(expenses)}
+          writeEnabled={writeEnabled}
+          save={save}
+          onExpensesChanged={() => fetchExpenses({ silent: true })}
+          onClose={() => setShowSettings(false)}
         />
       )}
 
