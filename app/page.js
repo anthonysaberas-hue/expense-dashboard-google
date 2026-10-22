@@ -14,7 +14,7 @@ import DateRangePicker from "./components/DateRangePicker";
 import TopCategories from "./components/TopCategories";
 import { runInsights } from "./lib/insights";
 import { getBudgets, setBudget, deleteBudget } from "./lib/budgets";
-import { safeGet, safeSet } from "./lib/storage";
+import { getSetting, setSetting, syncSettings, subscribeSettings } from "./lib/settings";
 import { applyTheme, getTheme } from "./lib/theme";
 import { formatMonthLabel } from "./lib/constants";
 
@@ -48,7 +48,9 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState(0);
   const [budgets, setBudgets] = useState(() => getBudgets());
   const [theme, setThemeState] = useState(() => getTheme());
-  const [dismissedInsights, setDismissedInsights] = useState(() => safeGet("dismissed_insights", {}));
+  const [dismissedInsights, setDismissedInsights] = useState(() => getSetting("dismissed_insights"));
+  const [settingsReady, setSettingsReady] = useState(false);
+  const [, setSettingsVersion] = useState(0);
   const [dateRange, setDateRange] = useState({ start: null, end: null });
   const transactionsSearchRef = useRef(null);
 
@@ -84,6 +86,22 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => { fetchExpenses(); }, [fetchExpenses]);
+
+  // ── Settings (categories, budgets, …) synced via the sheet's Settings tab ──
+  const loadSettings = useCallback(async () => {
+    try {
+      await syncSettings();
+    } catch (err) {
+      console.error(err); // keep working from the local copy
+    }
+    setBudgets(getBudgets());
+    setDismissedInsights(getSetting("dismissed_insights"));
+    setSettingsReady(true);
+  }, []);
+
+  useEffect(() => { loadSettings(); }, [loadSettings]);
+  // Components read settings during render; re-render when they change
+  useEffect(() => subscribeSettings(() => setSettingsVersion((v) => v + 1)), []);
 
   // Warn before closing the tab while a save is still in flight
   useEffect(() => {
@@ -227,7 +245,7 @@ export default function Dashboard() {
   const dismissInsight = useCallback((insightId) => {
     setDismissedInsights((prev) => {
       const updated = { ...prev, [selectedMonth]: [...(prev[selectedMonth] || []), insightId] };
-      safeSet("dismissed_insights", updated);
+      setSetting("dismissed_insights", updated);
       return updated;
     });
   }, [selectedMonth]);
@@ -483,7 +501,7 @@ export default function Dashboard() {
               {isDark ? "☀" : "☾"}
             </button>
             <button
-              onClick={() => fetchExpenses({ silent: true })}
+              onClick={() => { fetchExpenses({ silent: true }); loadSettings(); }}
               className="btn-primary"
               disabled={loading || refreshing}
               aria-label="Refresh data from Google Sheets"
@@ -523,7 +541,7 @@ export default function Dashboard() {
 
       {/* ── Main content ───────────────────────────────────── */}
       <main id="main-content" className="main-content" tabIndex={-1}>
-        {loading ? (
+        {loading || !settingsReady ? (
           <SkeletonLoader />
         ) : error ? (
           <div className="error-state" role="alert">
