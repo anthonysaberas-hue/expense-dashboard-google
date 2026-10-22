@@ -1823,3 +1823,10 @@ body {
   .split-amount-field { flex: 1; }
   .split-amount-field input { font-size: 16px; } /* 16px stops iOS zooming in */
 }
+@media (max-width: 639px) {
+  .month-selector { flex-wrap: wrap; overflow: visible; padding: 6px 14px 10px; }
+  .month-switcher { flex: 1 1 auto; justify-content: space-between; }
+  .month-selector .date-range-btn { flex: 1 1 auto; justify-content: center; }
+}
+.quick-add .search-input { width: 100%; box-sizing: border-box; }
+.quick-add .quick-add-date-input { width: auto; }
