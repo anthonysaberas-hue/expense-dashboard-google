@@ -312,6 +312,9 @@ body {
 }
 
 @media (max-width: 639px) {
+  /* Tabs live in the fixed bottom bar on mobile, so let the header and its
+     wrapping month pills scroll away instead of eating the screen. */
+  .header { position: static; }
   .tabbar-desktop { display: none; }
   .tabbar-mobile { display: block; }
   .main-content { padding: 14px; padding-bottom: calc(60px + env(safe-area-inset-bottom)); }
