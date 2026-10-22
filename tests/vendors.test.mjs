@@ -8,6 +8,9 @@ test("vendor names that differ only by store number, case or punctuation match",
   assert.equal(vendorKey("PHARMAPRIX #1234"), "pharmaprix");
   assert.equal(vendorKey(" Pharmaprix "), "pharmaprix");
   assert.equal(vendorKey("Pharmaprix 04512"), "pharmaprix");
+  assert.equal(vendorKey("PHARMAPRIX 42"), "pharmaprix");
+  assert.equal(vendorKey("MAXI 9596"), "maxi");
+  assert.equal(vendorKey("7 ELEVEN"), "7 eleven"); // leading numbers are part of the name
   assert.equal(vendorKey("UBER CANADA/UBEREATS"), "uber canada ubereats");
   assert.equal(vendorKey("Café Olimpico"), "café olimpico");
   assert.equal(vendorKey(""), "");
@@ -66,4 +69,15 @@ test("suggestions: prefix matches first, then most used", () => {
   assert.deepEqual(suggestVendors(idx, "ph").map((v) => v.name), ["Pharmaprix", "Pho Lien", "Jean Coutu Pharmacie"]);
   assert.deepEqual(suggestVendors(idx, "pharm").map((v) => v.name), ["Pharmaprix", "Jean Coutu Pharmacie"]);
   assert.deepEqual(suggestVendors(idx, ""), []);
+});
+
+test("display name drops store numbers so new entries don't copy them", () => {
+  const idx = buildVendorIndex([
+    e("PHARMAPRIX #0045", "Healthcare", "2026-08-01"),
+    e("PHARMAPRIX #0045", "Healthcare", "2026-08-02"),
+    e("PHARMAPRIX 42", "Healthcare", "2026-08-03"),
+  ]);
+  assert.equal(idx.length, 1);
+  assert.equal(idx[0].name, "PHARMAPRIX");
+  assert.equal(idx[0].count, 3);
 });
