@@ -1,10 +1,11 @@
 "use client";
 import { useState } from "react";
 import CategoryPicker from "./CategoryPicker";
+import { buildInstallments, localDateString } from "../lib/money";
 
 export default function AddExpenseModal({ categories = [], onAdd, onClose }) {
   const [form, setForm] = useState({
-    date: new Date().toISOString().split("T")[0],
+    date: localDateString(),
     vendor: "",
     name: "",
     category: "Uncategorized",
@@ -33,35 +34,17 @@ export default function AddExpenseModal({ categories = [], onAdd, onClose }) {
 
     setSaving(true);
     try {
+      const base = {
+        vendor: form.vendor || form.name,
+        name: form.name || form.vendor,
+        category: form.category,
+      };
       if (installmentCount <= 1) {
-        // Single expense
-        await onAdd({
-          date: form.date,
-          vendor: form.vendor || form.name,
-          name: form.name || form.vendor,
-          category: form.category,
-          amount: totalAmount,
-          repaid: parseFloat(form.repaid) || 0,
-          notes: form.notes,
-        });
+        await onAdd({ ...base, date: form.date, amount: totalAmount, repaid: parseFloat(form.repaid) || 0, notes: form.notes });
       } else {
-        // Create N installments across consecutive months
-        const [startYear, startMonth] = form.date.split("-").map(Number);
-        for (let i = 0; i < installmentCount; i++) {
-          const totalMonths = startMonth - 1 + i; // 0-based cumulative
-          const y = startYear + Math.floor(totalMonths / 12);
-          const m = totalMonths % 12;
-          const installDate = `${y}-${String(m + 1).padStart(2, "0")}-01`;
-          await onAdd({
-            date: installDate,
-            vendor: form.vendor || form.name,
-            name: form.name || form.vendor,
-            category: form.category,
-            amount: Math.round(perMonth * 100) / 100,
-            repaid: 0,
-            notes: form.notes ? `${form.notes} (${i + 1}/${installmentCount})` : `Installment ${i + 1}/${installmentCount}`,
-          });
-        }
+        // N installments that add back up to the exact total, saved in one request
+        await onAdd(buildInstallments({ date: form.date, amount: totalAmount, notes: form.notes }, installmentCount)
+          .map((r) => ({ ...base, ...r, repaid: 0 })));
       }
       onClose();
     } catch (err) {

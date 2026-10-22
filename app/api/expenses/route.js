@@ -5,11 +5,11 @@ import { NextResponse } from "next/server";
 import {
   readAllRows,
   ensureColumns,
-  updateRow,
-  appendRow,
+  updateRows,
+  appendRows,
   deleteRow,
   readAllSplits,
-  deleteSplit,
+  deleteSplits,
   isWriteConfigured,
 } from "../../lib/sheets";
 import { readAllPhotos, softDeletePhoto } from "../../lib/photos";
@@ -36,6 +36,32 @@ function normalize(row) {
     repaid: typeof row.Repaid === "number" ? row.Repaid : parseFloat(row.Repaid) || 0,
     _order: row._rowIndex || 0,
     notes: row.Notes || "",
+  };
+}
+
+// Map frontend field names to Sheet column names
+function toSheetFields(fields) {
+  const sheetFields = {};
+  if (fields.name !== undefined) sheetFields.Name = fields.name;
+  if (fields.date !== undefined) sheetFields.Date = fields.date;
+  if (fields.amount !== undefined) sheetFields.Amount = fields.amount;
+  if (fields.vendor !== undefined) sheetFields.Vendor = fields.vendor;
+  if (fields.category !== undefined) sheetFields.Category = fields.category;
+  if (fields.repaid !== undefined) sheetFields.Repaid = fields.repaid;
+  if (fields.notes !== undefined) sheetFields.Notes = fields.notes;
+  return sheetFields;
+}
+
+function toNewRow(body) {
+  return {
+    Name: body.name || body.vendor || "",
+    Date: body.date,
+    Amount: body.amount,
+    Category: body.category || "Uncategorized",
+    Vendor: body.vendor || "",
+    Source: "Dashboard",
+    Repaid: body.repaid || 0,
+    Notes: body.notes || "",
   };
 }
 
@@ -101,24 +127,15 @@ export async function PATCH(request) {
       );
     }
 
+    // Either { id, ...fields } or { updates: [{ id, ...fields }] } — one Sheets request either way
     const body = await request.json();
-    const { id, ...fields } = body;
-
-    if (!id) {
+    const list = Array.isArray(body.updates) ? body.updates : [body];
+    if (list.length === 0 || list.some((u) => !u.id)) {
       return NextResponse.json({ error: "Missing id" }, { status: 400 });
     }
 
-    // Map frontend field names to Sheet column names
-    const sheetFields = {};
-    if (fields.name !== undefined) sheetFields.Name = fields.name;
-    if (fields.date !== undefined) sheetFields.Date = fields.date;
-    if (fields.amount !== undefined) sheetFields.Amount = fields.amount;
-    if (fields.vendor !== undefined) sheetFields.Vendor = fields.vendor;
-    if (fields.category !== undefined) sheetFields.Category = fields.category;
-    if (fields.repaid !== undefined) sheetFields.Repaid = fields.repaid;
-    if (fields.notes !== undefined) sheetFields.Notes = fields.notes;
-
-    await updateRow(id, sheetFields);
+    await updateRows(list.map(({ id, ...fields }) => ({ id, fields: toSheetFields(fields) })));
+    const id = list.length === 1 ? list[0].id : undefined;
 
     return NextResponse.json({ ok: true, id });
   } catch (error) {
@@ -141,29 +158,25 @@ export async function POST(request) {
       );
     }
 
+    // Either one expense, or { rows: [...] } (installments) with an optional
+    // { archive: { id, ...fields } } applied after the rows are added
     const body = await request.json();
-
-    if (!body.date || body.amount === undefined) {
+    const rows = Array.isArray(body.rows) ? body.rows : [body];
+    if (rows.length === 0 || rows.some((r) => !r.date || r.amount === undefined)) {
       return NextResponse.json(
         { error: "Missing required fields: date, amount" },
         { status: 400 }
       );
     }
 
-    const sheetFields = {
-      Name: body.name || body.vendor || "",
-      Date: body.date,
-      Amount: body.amount,
-      Category: body.category || "Uncategorized",
-      Vendor: body.vendor || "",
-      Source: "Dashboard",
-      Repaid: body.repaid || 0,
-      Notes: body.notes || "",
-    };
+    const ids = await appendRows(rows.map(toNewRow));
+    if (body.archive?.id) {
+      const { id: archiveId, ...fields } = body.archive;
+      await updateRows([{ id: archiveId, fields: toSheetFields(fields) }]);
+    }
+    const id = ids[0];
 
-    const id = await appendRow(sheetFields);
-
-    return NextResponse.json({ ok: true, id });
+    return NextResponse.json({ ok: true, id, ids });
   } catch (error) {
     console.error("Sheets API append error:", error);
     return NextResponse.json(
@@ -193,10 +206,7 @@ export async function DELETE(request) {
     // Delete associated splits first (avoid orphans)
     try {
       const splits = await readAllSplits();
-      const orphans = splits.filter((s) => s.ExpenseID === id);
-      for (const s of orphans) {
-        await deleteSplit(s.SplitID);
-      }
+      await deleteSplits(splits.filter((s) => s.ExpenseID === id).map((s) => s.SplitID));
     } catch { /* Splits tab may not exist */ }
 
     // Soft-delete associated photos (avoid orphaning their Drive references). Each
