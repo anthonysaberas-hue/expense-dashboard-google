@@ -3,6 +3,7 @@ import { useState, useMemo, useCallback } from "react";
 import { formatCurrency, formatMonthLabel } from "../lib/constants";
 import EmptyState from "./EmptyState";
 import NotesModal from "./NotesModal";
+import { allocatePayment } from "../lib/allocatePayment";
 
 export default function PeopleTab({
   expenses = [],
@@ -12,6 +13,7 @@ export default function PeopleTab({
   onDeleteSplit,
   onSettleAll,
   onSettleMonth,
+  onSettleAmount,
   writeEnabled = false,
   onUpdateExpense,
   photoCounts = {},
@@ -21,6 +23,8 @@ export default function PeopleTab({
   const [paymentInputs, setPaymentInputs] = useState({});
   const [monthOverrides, setMonthOverrides] = useState({});
   const [notesExpenseId, setNotesExpenseId] = useState(null);
+  const [lumpInputs, setLumpInputs] = useState({});
+  const [lumpBusy, setLumpBusy] = useState(null);
 
   // Aggregate balances per person
   const people = useMemo(() => {
@@ -97,6 +101,29 @@ export default function PeopleTab({
     await onRecordPayment?.(splitId, amount);
     setPaymentInputs((prev) => ({ ...prev, [splitId]: "" }));
   }, [onRecordPayment]);
+
+  const handleSettleAmount = useCallback(async (person, amount, plan) => {
+    const settledCount = plan.updates.filter((u) => u.status === "settled").length;
+    const partial = plan.updates.find((u) => u.status === "partial");
+    let msg = `Apply ${formatCurrency(amount)} from ${person}, oldest first?
+
+Fully settles ${settledCount} transaction${settledCount === 1 ? "" : "s"}.`;
+    if (partial) {
+      const exp = expenseMap[partial.split.expenseId];
+      msg += `
+Partially pays ${exp ? exp.vendor || exp.name : "a transaction"} (${formatCurrency(partial.repaid)} of ${formatCurrency(partial.split.share)}).`;
+    }
+    if (!confirm(msg)) return;
+    setLumpBusy(person);
+    try {
+      await onSettleAmount?.(person, amount);
+      setLumpInputs((prev) => ({ ...prev, [person]: "" }));
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setLumpBusy(null);
+    }
+  }, [onSettleAmount, expenseMap]);
 
   const handleForgive = useCallback(async (split) => {
     const remaining = split.share - split.repaid;
@@ -195,6 +222,69 @@ export default function PeopleTab({
               {/* Expanded detail */}
               {isExpanded && (
                 <div style={{ borderTop: "1px solid var(--border)", padding: "14px 16px" }}>
+                  {/* Settle by amount received */}
+                  {writeEnabled && p.balance > 0 && (() => {
+                    const raw = lumpInputs[p.person] ?? "";
+                    const amount = parseFloat(raw);
+                    const valid = !isNaN(amount) && amount > 0;
+                    const tooMuch = valid && Math.round(amount * 100) > Math.round(p.balance * 100);
+                    const plan = valid && !tooMuch ? allocatePayment(splits, expenseMap, p.person, amount) : null;
+                    const settledCount = plan ? plan.updates.filter((u) => u.status === "settled").length : 0;
+                    const partial = plan?.updates.find((u) => u.status === "partial");
+                    const partialExp = partial ? expenseMap[partial.split.expenseId] : null;
+                    const busy = lumpBusy === p.person;
+                    return (
+                      <div style={{ marginBottom: 12, padding: "10px 12px", border: "1px solid var(--border)", borderRadius: 8 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                          <label htmlFor={`lump-${p.person}`} style={{ fontSize: 12, fontWeight: 600, color: "var(--text)" }}>
+                            Received
+                          </label>
+                          <input
+                            id={`lump-${p.person}`}
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            placeholder="0.00"
+                            value={raw}
+                            disabled={busy}
+                            onChange={(e) => setLumpInputs((prev) => ({ ...prev, [p.person]: e.target.value }))}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && plan && !busy) handleSettleAmount(p.person, amount, plan);
+                            }}
+                            className="search-input mobile-tap-target"
+                            style={{ width: 110, minHeight: 28, padding: "2px 8px", fontSize: 12, textAlign: "right" }}
+                          />
+                          <button
+                            className="btn-ghost mobile-tap-target"
+                            style={{ fontSize: 11, padding: "4px 10px", minHeight: 28 }}
+                            disabled={!plan || busy}
+                            onClick={() => handleSettleAmount(p.person, amount, plan)}
+                            title="Settle transactions oldest first up to this amount"
+                          >
+                            {busy ? "Applying…" : "Apply"}
+                          </button>
+                          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                            of {formatCurrency(p.balance)} owed · oldest first
+                          </span>
+                        </div>
+                        {tooMuch && (
+                          <div style={{ fontSize: 11, color: "var(--red)", marginTop: 6 }}>
+                            More than the {formatCurrency(p.balance)} owed.
+                          </div>
+                        )}
+                        {plan && (
+                          <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>
+                            Settles {settledCount} transaction{settledCount === 1 ? "" : "s"}
+                            {partial && (
+                              <> and partially pays <strong>{partialExp ? partialExp.vendor || partialExp.name : "one"}</strong> ({formatCurrency(partial.repaid)} of {formatCurrency(partial.split.share)}, {formatCurrency(partial.split.share - partial.repaid)} still owed)</>
+                            )}
+                            .
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
                   {/* Month groups */}
                   {p.months.map((mg) => {
                     const monthExpanded = isMonthExpanded(p.person, mg.month, mg.balance);
