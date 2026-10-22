@@ -1,11 +1,16 @@
 "use client";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import CategoryPicker from "./CategoryPicker";
 import { buildInstallments, localDateString } from "../lib/money";
+import { formatCurrency } from "../lib/constants";
 
+// Quick add: amount (number keypad, focused) → vendor → category → Save.
+// Date defaults to today; everything else is under "More options".
 export default function AddExpenseModal({ categories = [], onAdd, onClose }) {
+  const today = localDateString();
+  const yesterday = localDateString(new Date(Date.now() - 86400000));
   const [form, setForm] = useState({
-    date: localDateString(),
+    date: today,
     vendor: "",
     name: "",
     category: "Uncategorized",
@@ -14,8 +19,22 @@ export default function AddExpenseModal({ categories = [], onAdd, onClose }) {
     notes: "",
     installments: "1",
   });
+  const [showMore, setShowMore] = useState(false);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const amountRef = useRef(null);
+  const vendorRef = useRef(null);
+  const categoryWrapRef = useRef(null);
+
+  // Focus during the same task as the tap that opened us, so phones show the keypad
+  useEffect(() => { amountRef.current?.focus(); }, []);
+
+  useEffect(() => {
+    // Escape inside the category picker just closes the picker
+    const onKey = (e) => e.key === "Escape" && !e.target.closest?.('[role="combobox"]') && onClose();
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
   const handleChange = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -23,28 +42,29 @@ export default function AddExpenseModal({ categories = [], onAdd, onClose }) {
   };
 
   const installmentCount = Math.max(1, parseInt(form.installments) || 1);
-  const totalAmount = parseFloat(form.amount) || 0;
-  const perMonth = installmentCount > 1 ? (totalAmount / installmentCount) : totalAmount;
+  const totalAmount = parseFloat(String(form.amount).replace(",", ".")) || 0;
+  const installments = installmentCount > 1 && totalAmount > 0
+    ? buildInstallments({ date: form.date, amount: totalAmount, notes: form.notes }, installmentCount)
+    : null;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.date) return setError("Date is required");
-    if (!form.amount || isNaN(Number(form.amount))) return setError("Valid amount is required");
-    if (!form.vendor && !form.name) return setError("Vendor or name is required");
+    if (!(totalAmount > 0)) { setError("Enter an amount"); amountRef.current?.focus(); return; }
+    if (!form.vendor.trim() && !form.name.trim()) { setError("Where did you spend it?"); vendorRef.current?.focus(); return; }
+    if (!form.date) return setError("Pick a date");
 
     setSaving(true);
     try {
       const base = {
-        vendor: form.vendor || form.name,
-        name: form.name || form.vendor,
+        vendor: (form.vendor || form.name).trim(),
+        name: (form.name || form.vendor).trim(),
         category: form.category,
       };
-      if (installmentCount <= 1) {
+      if (!installments) {
         await onAdd({ ...base, date: form.date, amount: totalAmount, repaid: parseFloat(form.repaid) || 0, notes: form.notes });
       } else {
         // N installments that add back up to the exact total, saved in one request
-        await onAdd(buildInstallments({ date: form.date, amount: totalAmount, notes: form.notes }, installmentCount)
-          .map((r) => ({ ...base, ...r, repaid: 0 })));
+        await onAdd(installments.map((r) => ({ ...base, ...r, repaid: 0 })));
       }
       onClose();
     } catch (err) {
@@ -54,72 +74,51 @@ export default function AddExpenseModal({ categories = [], onAdd, onClose }) {
     }
   };
 
+  const focusCategory = () => categoryWrapRef.current?.querySelector("input")?.focus();
+
   return (
     <div className="modal-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal-card" role="dialog" aria-modal="true" aria-label="Add expense">
+      <div className="modal-card quick-add" role="dialog" aria-modal="true" aria-label="Add expense">
         <div className="modal-header">
-          <h2 className="modal-title">Add Expense</h2>
-          <button onClick={onClose} className="modal-close" aria-label="Close">×</button>
+          <h2 className="modal-title">Add expense</h2>
+          <button type="button" onClick={onClose} className="modal-close" aria-label="Close">×</button>
         </div>
         <form onSubmit={handleSubmit} className="modal-body">
-          <div className="modal-field">
-            <label className="modal-label">Date *</label>
+          <label className="quick-add-amount">
+            <span className="quick-add-currency" aria-hidden="true">$</span>
             <input
-              type="date"
-              value={form.date}
-              onChange={(e) => handleChange("date", e.target.value)}
-              className="search-input"
-              required
-            />
-          </div>
-          <div className="modal-field">
-            <label className="modal-label">Vendor *</label>
-            <input
+              ref={amountRef}
               type="text"
+              inputMode="decimal"
+              enterKeyHint="next"
+              autoComplete="off"
+              placeholder="0.00"
+              value={form.amount}
+              onChange={(e) => handleChange("amount", e.target.value.replace(/[^\d.,]/g, ""))}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); vendorRef.current?.focus(); } }}
+              aria-label="Amount"
+            />
+          </label>
+
+          <div className="modal-field">
+            <label className="modal-label" htmlFor="qa-vendor">Where</label>
+            <input
+              id="qa-vendor"
+              ref={vendorRef}
+              type="text"
+              enterKeyHint="next"
+              autoCapitalize="words"
+              autoComplete="off"
               value={form.vendor}
               onChange={(e) => handleChange("vendor", e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); focusCategory(); } }}
               className="search-input"
-              placeholder="e.g. Uber, Trader Joe's"
-              autoFocus
+              placeholder="e.g. Carrefour"
             />
           </div>
-          <div className="modal-row">
-            <div className="modal-field" style={{ flex: 1 }}>
-              <label className="modal-label">Total Amount *</label>
-              <input
-                type="number"
-                step="0.01"
-                value={form.amount}
-                onChange={(e) => handleChange("amount", e.target.value)}
-                className="search-input"
-                placeholder="0.00"
-                required
-              />
-            </div>
-            <div className="modal-field" style={{ flex: 1 }}>
-              <label className="modal-label">Split across months</label>
-              <select
-                value={form.installments}
-                onChange={(e) => handleChange("installments", e.target.value)}
-                className="filter-select"
-                style={{ width: "100%" }}
-              >
-                <option value="1">No split</option>
-                <option value="2">2 months</option>
-                <option value="3">3 months</option>
-                <option value="4">4 months</option>
-                <option value="6">6 months</option>
-                <option value="12">12 months</option>
-              </select>
-            </div>
-          </div>
-          {installmentCount > 1 && totalAmount > 0 && (
-            <div style={{ fontSize: 12, color: "var(--green)", fontWeight: 600, marginBottom: 10, padding: "8px 12px", background: "var(--green-light)", borderRadius: 6 }}>
-              ${perMonth.toFixed(2)}/month × {installmentCount} months = ${totalAmount.toFixed(2)} total
-            </div>
-          )}
-          <div className="modal-field">
-            <label className="modal-label">Category</label>
+
+          <div className="modal-field" ref={categoryWrapRef}>
+            <span className="modal-label">Category</span>
             <CategoryPicker
               value={form.category}
               categories={categories}
@@ -127,25 +126,101 @@ export default function AddExpenseModal({ categories = [], onAdd, onClose }) {
               style={{ width: "100%" }}
             />
           </div>
+
           <div className="modal-field">
-            <label className="modal-label">Notes</label>
-            <input
-              type="text"
-              value={form.notes}
-              onChange={(e) => handleChange("notes", e.target.value)}
-              className="search-input"
-              placeholder="e.g. Birthday dinner for Sarah"
-            />
+            <span className="modal-label">When</span>
+            <div className="quick-add-dates">
+              {[[today, "Today"], [yesterday, "Yesterday"]].map(([d, label]) => (
+                <button
+                  key={label}
+                  type="button"
+                  className={`quick-add-chip${form.date === d ? " active" : ""}`}
+                  onClick={() => handleChange("date", d)}
+                  aria-pressed={form.date === d}
+                >
+                  {label}
+                </button>
+              ))}
+              <input
+                type="date"
+                value={form.date}
+                onChange={(e) => handleChange("date", e.target.value)}
+                className="search-input quick-add-date-input"
+                aria-label="Date"
+              />
+            </div>
           </div>
-          {error && <p className="modal-error">{error}</p>}
-          <div className="modal-actions">
-            <button type="button" onClick={onClose} className="btn-ghost">
-              Cancel
-            </button>
-            <button type="submit" className="btn-primary" disabled={saving}>
-              {saving ? "Adding…" : installmentCount > 1 ? `Add ${installmentCount} installments` : "Add Expense"}
-            </button>
-          </div>
+
+          <button type="button" className="quick-add-more" onClick={() => setShowMore((v) => !v)} aria-expanded={showMore}>
+            {showMore ? "Fewer options ▴" : "More options ▾"}
+          </button>
+
+          {showMore && (
+            <>
+              <div className="modal-field">
+                <label className="modal-label" htmlFor="qa-notes">Notes</label>
+                <input
+                  id="qa-notes"
+                  type="text"
+                  value={form.notes}
+                  onChange={(e) => handleChange("notes", e.target.value)}
+                  className="search-input"
+                  placeholder="e.g. Birthday dinner for Sarah"
+                />
+              </div>
+              <div className="modal-row">
+                <div className="modal-field" style={{ flex: 1 }}>
+                  <label className="modal-label" htmlFor="qa-repaid">Already paid back</label>
+                  <input
+                    id="qa-repaid"
+                    type="text"
+                    inputMode="decimal"
+                    value={form.repaid}
+                    onChange={(e) => handleChange("repaid", e.target.value.replace(/[^\d.,]/g, ""))}
+                    className="search-input"
+                    placeholder="0.00"
+                    disabled={installmentCount > 1}
+                  />
+                </div>
+                <div className="modal-field" style={{ flex: 1 }}>
+                  <label className="modal-label" htmlFor="qa-installments">Split across months</label>
+                  <select
+                    id="qa-installments"
+                    value={form.installments}
+                    onChange={(e) => handleChange("installments", e.target.value)}
+                    className="filter-select"
+                    style={{ width: "100%" }}
+                  >
+                    <option value="1">No split</option>
+                    {[2, 3, 4, 6, 12].map((n) => <option key={n} value={n}>{n} months</option>)}
+                  </select>
+                </div>
+              </div>
+              {installments && (
+                <div className="quick-add-note">
+                  {installments.length} × {formatCurrency(installments[0].amount)}
+                  {installments.at(-1).amount !== installments[0].amount && ` (last ${formatCurrency(installments.at(-1).amount)})`}
+                  {" "}= {formatCurrency(totalAmount)}
+                </div>
+              )}
+              <div className="modal-field">
+                <label className="modal-label" htmlFor="qa-name">Description (if different from where)</label>
+                <input
+                  id="qa-name"
+                  type="text"
+                  value={form.name}
+                  onChange={(e) => handleChange("name", e.target.value)}
+                  className="search-input"
+                  placeholder="Optional"
+                />
+              </div>
+            </>
+          )}
+
+          {error && <p className="modal-error" role="alert">{error}</p>}
+          <button type="submit" className="btn-primary quick-add-save" disabled={saving}>
+            {saving ? "Adding…" : installments ? `Add ${installments.length} installments` : totalAmount > 0 ? `Add ${formatCurrency(totalAmount)}` : "Add expense"}
+          </button>
         </form>
       </div>
     </div>

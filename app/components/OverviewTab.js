@@ -4,6 +4,7 @@ import { getCatColor, formatCurrency, formatMonthLabel, MONTHS, getNetAmount, ge
 import EditableCell from "./EditableCell";
 import { getAllCategories } from "../lib/categories";
 import { toCents, fromCents, summarizeSplits } from "../lib/money";
+import { useIsPhone } from "../lib/useMediaQuery";
 import NotesCell from "./NotesCell";
 import AddExpenseModal from "./AddExpenseModal";
 import SplitModal from "./SplitModal";
@@ -335,6 +336,7 @@ export default function OverviewTab({
   const [showAddModal, setShowAddModal] = useState(false);
   const [splitExpense, setSplitExpense] = useState(null);
   const [undoAction, setUndoAction] = useState(null);
+  const isPhone = useIsPhone();
 
   useEffect(() => {
     if (searchRef && typeof searchRef === "object") {
@@ -380,6 +382,70 @@ export default function OverviewTab({
       undo: () => onAdd?.({ date: expense.date, vendor: expense.vendor, name: expense.name, category: expense.category, amount: expense.amount, repaid: expense.repaid, notes: expense.notes }),
     });
   }, [onDelete, onAdd]);
+
+  // ── Cell renderers shared by the table (desktop) and cards (phone) ──
+  const splitsFor = (e) => splits.filter((s) => s.expenseId === e.id);
+
+  const renderAmount = (e) => {
+    const hasSplits = splitsFor(e).some((s) => s.status !== "forgiven");
+    const amountCell = <EditableCell value={e.amount} field="amount" type="number" onSave={(f, v) => handleCellSave(e, f, v)} disabled={!writeEnabled} />;
+    if (hasSplits) {
+      return (
+        <>
+          <span style={{ fontSize: 15, fontWeight: 700, color: "var(--green)", display: "block", textAlign: "right" }} title="Your cost">
+            {formatCurrency(e.netAmount ?? e.amount)}
+          </span>
+          <span style={{ fontSize: 10, opacity: 0.6, display: "block", textAlign: "right" }} title="What you paid">
+            paid {amountCell}
+          </span>
+        </>
+      );
+    }
+    return <span style={{ fontSize: 15, fontWeight: 700, display: "block", textAlign: "right" }}>{amountCell}</span>;
+  };
+
+  const renderPaidBack = (e) => {
+    const expSplits = splitsFor(e);
+    const { totalRepaid, totalForgiven } = summarizeSplits(expSplits);
+    if (expSplits.length > 0) {
+      return (
+        <>
+          <span style={{ color: totalRepaid > 0 ? "var(--green)" : "var(--text-muted)", fontWeight: 600, display: "block" }}>
+            {formatCurrency(totalRepaid)}
+          </span>
+          {totalForgiven > 0 && (
+            <span style={{ fontSize: 10, color: "var(--amber)", display: "block" }}>forgave {formatCurrency(totalForgiven)}</span>
+          )}
+        </>
+      );
+    }
+    if (e.repaid > 0) {
+      return <span style={{ color: "var(--green)", fontWeight: 600 }}>{formatCurrency(e.repaid)}</span>;
+    }
+    return <span style={{ color: "var(--text-muted)" }}>—</span>;
+  };
+
+  const renderSplitButton = (e) => {
+    const expSplits = splitsFor(e);
+    return (
+      <button
+        className="split-btn"
+        onClick={() => setSplitExpense(e)}
+        title={expSplits.length > 0 ? `${expSplits.length} splits` : "Split this expense"}
+        aria-label={expSplits.length > 0 ? `${expSplits.length} splits on ${e.vendor || e.name}` : `Split ${e.vendor || e.name}`}
+      >
+        {expSplits.length > 0 ? `👥${expSplits.length}` : "✂️"}
+      </button>
+    );
+  };
+
+  const SORTS = [
+    ["date:desc", "Newest first"],
+    ["date:asc", "Oldest first"],
+    ["amount:desc", "Biggest first"],
+    ["amount:asc", "Smallest first"],
+    ["vendor:asc", "Vendor A–Z"],
+  ];
 
   const txCols = [
     { key: "_toggle", label: "" },
@@ -514,6 +580,66 @@ export default function OverviewTab({
             </span>
           </div>
 
+          {isPhone ? (
+            <>
+              <select
+                value={`${sortKey}:${sortDir}`}
+                onChange={(ev) => { const [k, d] = ev.target.value.split(":"); setSortKey(k); setSortDir(d); }}
+                className="filter-select tx-cards-sort"
+                aria-label="Sort transactions"
+              >
+                {SORTS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+              </select>
+              {filtered.length === 0 ? (
+                <p className="tx-cards-empty">No transactions match your filter.</p>
+              ) : (
+                <ul className="tx-cards" aria-label="Transactions">
+                  {filtered.map((e, i) => {
+                    const excluded = excludedIds.has(e.id);
+                    return (
+                      <li key={e.id || i} className={`tx-card${excluded ? " excluded" : ""}`}>
+                        <div className="tx-card-main">
+                          <div className="tx-card-left">
+                            <div className="tx-card-vendor">
+                              <EditableCell value={e.vendor || e.name} field="vendor" onSave={(f, v) => handleCellSave(e, f, v)} disabled={!writeEnabled} />
+                            </div>
+                            <div className="tx-card-meta">
+                              <span className="tx-card-date">
+                                <EditableCell value={e.date} field="date" type="date" onSave={(f, v) => handleCellSave(e, f, v)} disabled={!writeEnabled} />
+                              </span>
+                              <span className="cat-badge" style={{ background: getCatColor(e.category) + "18", color: getCatColor(e.category) }}>
+                                <EditableCell value={e.category} field="category" type="category" options={allCategories} onSave={(f, v) => handleCellSave(e, f, v)} disabled={!writeEnabled} />
+                              </span>
+                            </div>
+                          </div>
+                          <div className="tx-card-right">
+                            {renderAmount(e)}
+                            {(splitsFor(e).length > 0 || e.repaid > 0) && (
+                              <span className="tx-card-paidback">back {renderPaidBack(e)}</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="tx-card-footer">
+                          <div className="tx-card-notes">
+                            <NotesCell expense={e} photoCount={photoCounts[e.id] || 0} writeEnabled={writeEnabled} onSave={(id, patch) => handleCellSave(e, "notes", patch.notes)} onPhotosChanged={onPhotosChanged} />
+                          </div>
+                          <div className="tx-card-actions">
+                            <label className="tx-card-include" title={excluded ? "Include in totals" : "Exclude from totals"}>
+                              <input type="checkbox" checked={!excluded} onChange={() => toggleId(e.id)} aria-label={`Count ${e.vendor || e.name} in totals`} />
+                            </label>
+                            {writeEnabled && renderSplitButton(e)}
+                            {writeEnabled && (
+                              <button onClick={() => handleDelete(e)} className="delete-row-btn" aria-label={`Delete ${e.vendor || e.name}`} title="Delete">×</button>
+                            )}
+                          </div>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </>
+          ) : (
           <div style={{ overflowX: "auto" }}>
             <table className="tx-table" aria-label="Transactions">
               <thead>
@@ -562,24 +688,7 @@ export default function OverviewTab({
                         <EditableCell value={e.date} field="date" type="date" onSave={(f, v) => handleCellSave(e, f, v)} disabled={!writeEnabled} />
                       </td>
                       <td style={{ textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
-                        {(() => {
-                          const hasSplits = splits.some((s) => s.expenseId === e.id && s.status !== "forgiven");
-                          if (hasSplits) {
-                            return (
-                              <>
-                                <span style={{ fontSize: 15, fontWeight: 700, color: "var(--green)", display: "block", textAlign: "right" }}>
-                                  {formatCurrency(e.netAmount ?? e.amount)}
-                                </span>
-                                <span style={{ fontSize: 10, opacity: 0.5, display: "block", textAlign: "right" }}>
-                                  <EditableCell value={e.amount} field="amount" type="number" onSave={(f, v) => handleCellSave(e, f, v)} disabled={!writeEnabled} />
-                                </span>
-                              </>
-                            );
-                          }
-                          return <span style={{ fontSize: 15, fontWeight: 700, display: "block", textAlign: "right" }}>
-                            <EditableCell value={e.amount} field="amount" type="number" onSave={(f, v) => handleCellSave(e, f, v)} disabled={!writeEnabled} />
-                          </span>;
-                        })()}
+                        {renderAmount(e)}
                       </td>
                       <td>
                         <span className="cat-badge" style={{ background: getCatColor(e.category) + "18", color: getCatColor(e.category) }}>
@@ -587,44 +696,14 @@ export default function OverviewTab({
                         </span>
                       </td>
                       <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                        {(() => {
-                          const expSplits = splits.filter((s) => s.expenseId === e.id);
-                          const { totalRepaid, totalForgiven } = summarizeSplits(expSplits);
-                          if (expSplits.length > 0) {
-                            return (
-                              <>
-                                <span style={{ color: totalRepaid > 0 ? "var(--green)" : "var(--text-muted)", fontWeight: 600, display: "block" }}>
-                                  {formatCurrency(totalRepaid)}
-                                </span>
-                                {totalForgiven > 0 && (
-                                  <span style={{ fontSize: 10, color: "var(--amber)", display: "block" }}>forgave {formatCurrency(totalForgiven)}</span>
-                                )}
-                              </>
-                            );
-                          }
-                          if (e.repaid > 0) {
-                            return <span style={{ color: "var(--green)", fontWeight: 600 }}>{formatCurrency(e.repaid)}</span>;
-                          }
-                          return <span style={{ color: "var(--text-muted)" }}>—</span>;
-                        })()}
+                        {renderPaidBack(e)}
                       </td>
                       <td style={{ fontSize: 12, color: "var(--text-muted)", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis" }}>
                         <NotesCell expense={e} photoCount={photoCounts[e.id] || 0} writeEnabled={writeEnabled} onSave={(id, patch) => handleCellSave(e, "notes", patch.notes)} onPhotosChanged={onPhotosChanged} />
                       </td>
                       {writeEnabled && (
                         <td style={{ textAlign: "center", width: 50 }}>
-                          {(() => {
-                            const expSplits = splits.filter((s) => s.expenseId === e.id);
-                            return (
-                              <button
-                                className="split-btn"
-                                onClick={() => setSplitExpense(e)}
-                                title={expSplits.length > 0 ? `${expSplits.length} splits` : "Split this expense"}
-                              >
-                                {expSplits.length > 0 ? `👥${expSplits.length}` : "✂️"}
-                              </button>
-                            );
-                          })()}
+                          {renderSplitButton(e)}
                         </td>
                       )}
                     </tr>
@@ -633,6 +712,7 @@ export default function OverviewTab({
               </tbody>
             </table>
           </div>
+          )}
         </div>
 
         {showAddModal && (
