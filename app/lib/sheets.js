@@ -386,6 +386,84 @@ export async function deleteSplit(splitId) {
   return deleteSplits([splitId]);
 }
 
+// ── SETTINGS TAB ────────────────────────────────────────
+// Key | Value (JSON) | Updated — settings that should follow you across devices
+
+const SETTINGS_TAB = "Settings";
+const SETTINGS_HEADERS = ["Key", "Value", "Updated"];
+
+async function ensureSettingsTab(client, spreadsheetId) {
+  const metaRes = await client.request({
+    url: `${API}/${spreadsheetId}?fields=sheets.properties`,
+  });
+  if (metaRes.data.sheets.some((s) => s.properties.title === SETTINGS_TAB)) return;
+  await client.request({
+    url: `${API}/${spreadsheetId}:batchUpdate`,
+    method: "POST",
+    data: { requests: [{ addSheet: { properties: { title: SETTINGS_TAB } } }] },
+  });
+  await client.request({
+    url: `${API}/${spreadsheetId}/values/${encodeURIComponent(SETTINGS_TAB)}!A1:C1?valueInputOption=RAW`,
+    method: "PUT",
+    data: { values: [SETTINGS_HEADERS] },
+  });
+}
+
+async function readSettingRows(client, spreadsheetId) {
+  await ensureSettingsTab(client, spreadsheetId);
+  const res = await client.request({
+    url: `${API}/${spreadsheetId}/values/${encodeURIComponent(SETTINGS_TAB)}!A:B`,
+  });
+  return (res.data.values || []).slice(1);
+}
+
+// { key: parsed value } — a cell that isn't valid JSON is skipped
+export async function readSettings() {
+  const client = await getClient();
+  const spreadsheetId = getSheetId();
+  const settings = {};
+  for (const [key, value] of await readSettingRows(client, spreadsheetId)) {
+    if (!key) continue;
+    try { settings[key] = JSON.parse(value); } catch { /* ignore hand-edited junk */ }
+  }
+  return settings;
+}
+
+// Upsert { key: value } pairs: existing keys updated in one batchUpdate,
+// new keys appended in one append
+export async function writeSettings(entries) {
+  const keys = Object.keys(entries);
+  if (keys.length === 0) return;
+  const client = await getClient();
+  const spreadsheetId = getSheetId();
+  const rows = await readSettingRows(client, spreadsheetId);
+  const rowByKey = new Map(rows.map(([key], i) => [key, i + 2])); // sheet row number
+  const now = new Date().toISOString();
+
+  const updates = [];
+  const appends = [];
+  for (const key of keys) {
+    const row = [key, JSON.stringify(entries[key]), now];
+    if (rowByKey.has(key)) updates.push({ range: `${SETTINGS_TAB}!A${rowByKey.get(key)}:C${rowByKey.get(key)}`, values: [row] });
+    else appends.push(row);
+  }
+
+  if (updates.length > 0) {
+    await client.request({
+      url: `${API}/${spreadsheetId}/values:batchUpdate`,
+      method: "POST",
+      data: { valueInputOption: "RAW", data: updates },
+    });
+  }
+  if (appends.length > 0) {
+    await client.request({
+      url: `${API}/${spreadsheetId}/values/${encodeURIComponent(SETTINGS_TAB)}!A:A:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
+      method: "POST",
+      data: { values: appends },
+    });
+  }
+}
+
 // Check if write is configured
 export function isWriteConfigured() {
   return !!getCredentials();

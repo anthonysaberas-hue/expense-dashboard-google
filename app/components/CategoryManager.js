@@ -1,7 +1,7 @@
 "use client";
 import { useState, useMemo } from "react";
 import { getCatColor, CATEGORY_COLORS } from "../lib/constants";
-import { safeGet, safeSet } from "../lib/storage";
+import { getSetting, setSetting } from "../lib/settings";
 
 const DEFAULT_EMOJIS = {
   Groceries: "🛒", Dining: "🍽️", Transportation: "🚗", Entertainment: "🎬",
@@ -22,11 +22,11 @@ const EMOJI_OPTIONS = [
 ];
 
 function getCustomCategories() {
-  return safeGet("custom_categories", {});
+  return getSetting("custom_categories");
 }
 
 function saveCustomCategories(cats) {
-  safeSet("custom_categories", cats);
+  setSetting("custom_categories", cats);
   return cats;
 }
 
@@ -53,7 +53,7 @@ export default function CategoryManager({ monthData = [], onBatchUpdate }) {
 
   const categories = useMemo(() => {
     const cats = new Set(monthData.map((e) => e.category));
-    // Also include custom categories from localStorage that may have no transactions
+    // Also include custom categories (synced via the Settings tab) that may have no transactions
     Object.keys(customs).forEach((c) => cats.add(c));
     return [...cats].sort();
   }, [monthData, customs]);

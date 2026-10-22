@@ -1,16 +1,16 @@
 "use client";
 import { useState, useMemo, useRef } from "react";
 import { formatCurrency } from "../lib/constants";
-import { safeGet, safeSet } from "../lib/storage";
+import { getSetting, setSetting } from "../lib/settings";
 
 function getKnownPeople() {
-  return safeGet("known_people", []);
+  return getSetting("known_people");
 }
 
 function addKnownPerson(name) {
   const people = getKnownPeople();
   if (!people.includes(name)) {
-    safeSet("known_people", [...people, name]);
+    setSetting("known_people", [...people, name]);
   }
 }
 

@@ -343,7 +343,7 @@ export default function OverviewTab({
   }, [searchRef]);
 
   const categories = ["All", ...Array.from(new Set(monthData.map((e) => e.category))).sort()];
-  // Read custom categories every render (localStorage is fast, ensures fresh data)
+  // Read every render (local copy of the synced settings — instant)
   const allCategories = getAllCategories(expenses);
 
   const handleSort = (key) => {
