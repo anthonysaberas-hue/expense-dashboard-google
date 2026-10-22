@@ -18,6 +18,16 @@ export function middleware(request) {
     return NextResponse.next();
   }
 
+  // Vercel's daily cron for recurring payments sends "Bearer <CRON_SECRET>"
+  const cronSecret = process.env.CRON_SECRET;
+  if (
+    pathname === "/api/recurring/run" &&
+    cronSecret &&
+    request.headers.get("authorization") === `Bearer ${cronSecret}`
+  ) {
+    return NextResponse.next();
+  }
+
   // Skip auth check if no password is configured
   if (!process.env.DASHBOARD_PASSWORD) {
     return NextResponse.next();

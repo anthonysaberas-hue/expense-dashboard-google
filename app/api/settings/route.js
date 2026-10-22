@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { readSettings, writeSettings, isWriteConfigured } from "../../lib/sheets";
 
 // Only these keys sync; anything else in the request is ignored
-const SYNCED_KEYS = ["custom_categories", "expense_budgets", "dismissed_insights", "known_people"];
+const SYNCED_KEYS = ["custom_categories", "expense_budgets", "dismissed_insights", "known_people", "vendor_categories"];
 
 // GET — all synced settings
 export async function GET() {

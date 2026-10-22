@@ -464,6 +464,114 @@ export async function writeSettings(entries) {
   }
 }
 
+// ── RECURRING TAB ───────────────────────────────────────
+// One row per recurring payment; LastCreated is the last charge added
+
+const RECURRING_TAB = "Recurring";
+const RECURRING_HEADERS = ["ID", "Vendor", "Name", "Amount", "Category", "Frequency", "StartDate", "EndDate", "LastCreated", "Active", "Notes"];
+
+async function ensureRecurringTab(client, spreadsheetId) {
+  const metaRes = await client.request({
+    url: `${API}/${spreadsheetId}?fields=sheets.properties`,
+  });
+  const sheet = metaRes.data.sheets.find((s) => s.properties.title === RECURRING_TAB);
+  if (sheet) return sheet.properties.sheetId;
+  const res = await client.request({
+    url: `${API}/${spreadsheetId}:batchUpdate`,
+    method: "POST",
+    data: { requests: [{ addSheet: { properties: { title: RECURRING_TAB } } }] },
+  });
+  await client.request({
+    url: `${API}/${spreadsheetId}/values/${encodeURIComponent(RECURRING_TAB)}!A1:${colToLetter(RECURRING_HEADERS.length - 1)}1?valueInputOption=RAW`,
+    method: "PUT",
+    data: { values: [RECURRING_HEADERS] },
+  });
+  return res.data.replies[0].addSheet.properties.sheetId;
+}
+
+async function readRecurringRows(client, spreadsheetId) {
+  const gid = await ensureRecurringTab(client, spreadsheetId);
+  const res = await client.request({
+    url: `${API}/${spreadsheetId}/values/${encodeURIComponent(RECURRING_TAB)}`,
+  });
+  const rows = res.data.values || [];
+  const headers = rows[0] || RECURRING_HEADERS;
+  const data = rows.slice(1).map((row, idx) => {
+    const obj = {};
+    headers.forEach((h, i) => { obj[h] = row[i] ?? ""; });
+    obj._rowIndex = idx + 2;
+    return obj;
+  });
+  return { gid, headers, data };
+}
+
+export async function readRecurring() {
+  const client = await getClient();
+  const spreadsheetId = getSheetId();
+  return (await readRecurringRows(client, spreadsheetId)).data.filter((r) => r.ID);
+}
+
+export async function addRecurring(fields) {
+  const client = await getClient();
+  const spreadsheetId = getSheetId();
+  const { headers } = await readRecurringRows(client, spreadsheetId);
+  const id = crypto.randomUUID();
+  const row = headers.map((h) => (h === "ID" ? id : fields[h] ?? ""));
+  await client.request({
+    url: `${API}/${spreadsheetId}/values/${encodeURIComponent(RECURRING_TAB)}!A:A:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
+    method: "POST",
+    data: { values: [row] },
+  });
+  return id;
+}
+
+// [{ id, fields }] in one request; all IDs checked first
+export async function updateRecurring(updates) {
+  if (updates.length === 0) return;
+  const client = await getClient();
+  const spreadsheetId = getSheetId();
+  const { headers, data } = await readRecurringRows(client, spreadsheetId);
+  const byId = new Map(data.map((r) => [r.ID, r]));
+  const ranges = [];
+  for (const { id, fields } of updates) {
+    const row = byId.get(id);
+    if (!row) throw new Error(`Recurring payment ${id} not found`);
+    for (const [field, value] of Object.entries(fields)) {
+      const colIdx = headers.indexOf(field);
+      if (colIdx === -1) continue;
+      ranges.push({
+        range: `${RECURRING_TAB}!${colToLetter(colIdx)}${row._rowIndex}`,
+        values: [[value === null || value === undefined ? "" : value]],
+      });
+    }
+  }
+  if (ranges.length === 0) return;
+  await client.request({
+    url: `${API}/${spreadsheetId}/values:batchUpdate`,
+    method: "POST",
+    data: { valueInputOption: "RAW", data: ranges },
+  });
+}
+
+export async function deleteRecurring(id) {
+  const client = await getClient();
+  const spreadsheetId = getSheetId();
+  const { gid, data } = await readRecurringRows(client, spreadsheetId);
+  const row = data.find((r) => r.ID === id);
+  if (!row) throw new Error(`Recurring payment ${id} not found`);
+  await client.request({
+    url: `${API}/${spreadsheetId}:batchUpdate`,
+    method: "POST",
+    data: {
+      requests: [{
+        deleteDimension: {
+          range: { sheetId: gid, dimension: "ROWS", startIndex: row._rowIndex - 1, endIndex: row._rowIndex },
+        },
+      }],
+    },
+  });
+}
+
 // Check if write is configured
 export function isWriteConfigured() {
   return !!getCredentials();

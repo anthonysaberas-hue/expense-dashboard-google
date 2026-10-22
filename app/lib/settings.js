@@ -10,6 +10,7 @@ export const SYNCED_DEFAULTS = {
   expense_budgets: {},
   dismissed_insights: {},
   known_people: [],
+  vendor_categories: {},
 };
 
 const DIRTY_KEY = "settings_dirty";
