@@ -6,6 +6,7 @@ import OverviewTab from "./components/OverviewTab";
 import TrendsTab from "./components/TrendsTab";
 import InsightsTab from "./components/InsightsTab";
 import PeopleTab from "./components/PeopleTab";
+import { allocatePayment } from "./lib/allocatePayment";
 import AssetsTab from "./components/AssetsTab";
 import ErrorBoundary from "./components/ErrorBoundary";
 import DateRangePicker from "./components/DateRangePicker";
@@ -350,6 +351,24 @@ export default function Dashboard() {
     await fetchExpenses();
   }, [splits, expenses, fetchExpenses]);
 
+  const handleSettleAmountForPerson = useCallback(async (person, amount) => {
+    const expenseById = {};
+    expenses.forEach((e) => { if (e.id) expenseById[e.id] = e; });
+    const { updates } = allocatePayment(splits, expenseById, person, amount);
+    for (const u of updates) {
+      const res = await fetch("/api/splits", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ splitId: u.split.splitId, repaid: u.repaid, status: u.status }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Settle amount failed");
+      }
+    }
+    await fetchExpenses();
+  }, [splits, expenses, fetchExpenses]);
+
   const handleSplitMonths = useCallback(async (expense, monthCount) => {
     const perMonth = Math.round((expense.amount / monthCount) * 100) / 100;
     const [startYear, startMonth] = (expense.date || "").split("-").map(Number);
@@ -434,6 +453,7 @@ export default function Dashboard() {
           onDeleteSplit={handleDeleteSplit}
           onSettleAll={handleSettleAllForPerson}
           onSettleMonth={handleSettleMonthForPerson}
+          onSettleAmount={handleSettleAmountForPerson}
           writeEnabled={writeEnabled}
           onUpdateExpense={handleUpdateExpense}
           photoCounts={photoCounts}
