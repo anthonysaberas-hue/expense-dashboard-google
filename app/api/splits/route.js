@@ -2,9 +2,17 @@ import { NextResponse } from "next/server";
 import {
   addSplit,
   updateSplit,
+  updateSplits,
   deleteSplit,
   isWriteConfigured,
 } from "../../lib/sheets";
+
+function toSheetFields(fields) {
+  const sheetFields = {};
+  if (fields.repaid !== undefined) sheetFields.Repaid = fields.repaid;
+  if (fields.status !== undefined) sheetFields.Status = fields.status;
+  return sheetFields;
+}
 
 // POST — create a new split
 export async function POST(request) {
@@ -31,6 +39,16 @@ export async function PATCH(request) {
       return NextResponse.json({ error: "Write not configured" }, { status: 503 });
     }
     const body = await request.json();
+
+    // Batch: { updates: [{ splitId, repaid, status }] } — one Sheets request
+    if (Array.isArray(body.updates)) {
+      if (body.updates.length === 0 || body.updates.some((u) => !u.splitId)) {
+        return NextResponse.json({ error: "Missing splitId" }, { status: 400 });
+      }
+      await updateSplits(body.updates.map(({ splitId, ...fields }) => ({ splitId, fields: toSheetFields(fields) })));
+      return NextResponse.json({ ok: true });
+    }
+
     const { splitId, action, ...fields } = body;
 
     if (!splitId) {
@@ -46,11 +64,7 @@ export async function PATCH(request) {
     }
 
     // Regular update (record payment)
-    const sheetFields = {};
-    if (fields.repaid !== undefined) sheetFields.Repaid = fields.repaid;
-    if (fields.status !== undefined) sheetFields.Status = fields.status;
-
-    await updateSplit(splitId, sheetFields);
+    await updateSplit(splitId, toSheetFields(fields));
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error("Split update error:", error);

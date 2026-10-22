@@ -7,6 +7,7 @@ import TrendsTab from "./components/TrendsTab";
 import InsightsTab from "./components/InsightsTab";
 import PeopleTab from "./components/PeopleTab";
 import { allocatePayment } from "./lib/allocatePayment";
+import { withNetAmounts, buildInstallments, toCents } from "./lib/money";
 import AssetsTab from "./components/AssetsTab";
 import ErrorBoundary from "./components/ErrorBoundary";
 import DateRangePicker from "./components/DateRangePicker";
@@ -19,22 +20,25 @@ import { formatMonthLabel } from "./lib/constants";
 
 function SkeletonLoader() {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }} aria-busy="true" aria-label="Loading">
+      <div className="kpi-grid">
         {[0,1,2,3].map(i => <div key={i} className="skeleton" style={{ height: 88 }} />)}
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "280px 1fr", gap: 16 }}>
+      <div className="charts-row">
         <div className="skeleton" style={{ height: 200 }} />
         <div className="skeleton" style={{ height: 200 }} />
       </div>
-      <div className="skeleton" style={{ height: 180 }} />
+      {[0,1,2,3,4].map(i => <div key={i} className="skeleton" style={{ height: 56 }} />)}
     </div>
   );
 }
 
 export default function Dashboard() {
-  const [expenses, setExpenses] = useState([]);
+  const [rawExpenses, setRawExpenses] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [pendingSaves, setPendingSaves] = useState(0);
+  const [saveError, setSaveError] = useState(null);
   const [error, setError] = useState(null);
   const [selectedMonth, setSelectedMonth] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
@@ -49,14 +53,15 @@ export default function Dashboard() {
   const transactionsSearchRef = useRef(null);
 
   // ── Fetch ────────────────────────────────────────────────────
-  const fetchExpenses = useCallback(async () => {
-    setLoading(true);
+  // First load shows the skeleton; later refreshes keep the page on screen
+  const fetchExpenses = useCallback(async ({ silent = false } = {}) => {
+    if (silent) setRefreshing(true); else setLoading(true);
     setError(null);
     try {
       const resp = await fetch("/api/expenses");
       if (!resp.ok) throw new Error(`API returned ${resp.status}`);
       const data = await resp.json();
-      setExpenses(data.expenses || []);
+      setRawExpenses(data.expenses || []);
       setSplits(data.splits || []);
       setLastUpdated(data.lastUpdated);
       setWriteEnabled(!!data.writeEnabled);
@@ -71,13 +76,31 @@ export default function Dashboard() {
         return months.includes(currentMonth) ? currentMonth : months[months.length - 1];
       });
     } catch (err) {
-      setError(err.message);
+      if (silent) setSaveError(err.message); else setError(err.message);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
   useEffect(() => { fetchExpenses(); }, [fetchExpenses]);
+
+  // Warn before closing the tab while a save is still in flight
+  useEffect(() => {
+    if (pendingSaves === 0) return;
+    const warn = (e) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [pendingSaves]);
+
+  useEffect(() => {
+    if (!saveError) return;
+    const t = setTimeout(() => setSaveError(null), 8000);
+    return () => clearTimeout(t);
+  }, [saveError]);
+
+  // Net amounts are recomputed on the client so local edits update totals instantly
+  const expenses = useMemo(() => withNetAmounts(rawExpenses, splits), [rawExpenses, splits]);
 
   // ── Photo counts (one request, grouped by expense id) ──────────
   const fetchPhotoCounts = useCallback(async () => {
@@ -218,206 +241,159 @@ export default function Dashboard() {
   }, []);
 
   // ── Write operations ─────────────────────────────────────────
-  const handleUpdateExpense = useCallback(async (id, fields) => {
-    const res = await fetch("/api/expenses", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, ...fields }),
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || "Update failed");
+  // Every change is applied to the screen first, then saved in one request in
+  // the background. If the save fails we show why and reload from the sheet,
+  // which is the source of truth.
+  const save = useCallback(async (url, method, body) => {
+    setPendingSaves((n) => n + 1);
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Save failed (${res.status})`);
+      }
+      return await res.json().catch(() => ({}));
+    } catch (err) {
+      setSaveError(err.message || "Save failed");
+      fetchExpenses({ silent: true });
+      throw err;
+    } finally {
+      setPendingSaves((n) => n - 1);
     }
-    await fetchExpenses();
   }, [fetchExpenses]);
 
-  const handleAddExpense = useCallback(async (data) => {
-    const res = await fetch("/api/expenses", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
+  const patchExpensesLocal = (patchById) =>
+    setRawExpenses((prev) => prev.map((e) => (patchById[e.id] ? { ...e, ...patchById[e.id] } : e)));
+
+  const patchSplitsLocal = (patchById) =>
+    setSplits((prev) => prev.map((s) => (patchById[s.splitId] ? { ...s, ...patchById[s.splitId] } : s)));
+
+  const handleUpdateExpense = useCallback(async (id, fields) => {
+    patchExpensesLocal({ [id]: fields });
+    await save("/api/expenses", "PATCH", { id, ...fields });
+  }, [save]);
+
+  // Accepts one expense or a list (installments); returns once it's on screen
+  const handleAddExpense = useCallback(async (dataOrRows, archive) => {
+    const rows = Array.isArray(dataOrRows) ? dataOrRows : [dataOrRows];
+    const tempIds = rows.map(() => `tmp-${crypto.randomUUID()}`);
+    setRawExpenses((prev) => {
+      const maxOrder = prev.reduce((m, e) => Math.max(m, e._order || 0), 0);
+      const added = rows.map((r, i) => ({
+        id: tempIds[i],
+        name: r.name || r.vendor || "",
+        vendor: r.vendor || "",
+        date: r.date,
+        amount: Number(r.amount) || 0,
+        category: r.category || "Uncategorized",
+        repaid: Number(r.repaid) || 0,
+        notes: r.notes || "",
+        source: "Dashboard",
+        _order: maxOrder + i + 1,
+      }));
+      const kept = archive ? prev.filter((e) => e.id !== archive.id) : prev;
+      return [...kept, ...added];
     });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || "Add failed");
-    }
-    await fetchExpenses();
-  }, [fetchExpenses]);
+    save("/api/expenses", "POST", { rows, archive })
+      .then(({ ids = [] }) => {
+        const realId = Object.fromEntries(tempIds.map((t, i) => [t, ids[i]]));
+        setRawExpenses((prev) => prev.map((e) => (realId[e.id] ? { ...e, id: realId[e.id] } : e)));
+      })
+      .catch(() => {});
+  }, [save]);
 
   const handleBatchCategoryUpdate = useCallback(async (oldCategory, newCategory) => {
-    // Find all expenses with the old category and update them
-    const toUpdate = expenses.filter((e) => e.category === oldCategory && e.id);
-    for (const expense of toUpdate) {
-      await fetch("/api/expenses", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: expense.id, category: newCategory }),
-      });
-    }
-    await fetchExpenses();
-  }, [expenses, fetchExpenses]);
+    const ids = rawExpenses.filter((e) => e.category === oldCategory && e.id).map((e) => e.id);
+    if (ids.length === 0) return;
+    patchExpensesLocal(Object.fromEntries(ids.map((id) => [id, { category: newCategory }])));
+    await save("/api/expenses", "PATCH", { updates: ids.map((id) => ({ id, category: newCategory })) });
+  }, [rawExpenses, save]);
 
   const handleDeleteExpense = useCallback(async (id) => {
-    const res = await fetch(`/api/expenses?id=${encodeURIComponent(id)}`, {
-      method: "DELETE",
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || "Delete failed");
-    }
-    await fetchExpenses();
-  }, [fetchExpenses]);
+    setRawExpenses((prev) => prev.filter((e) => e.id !== id));
+    setSplits((prev) => prev.filter((s) => s.expenseId !== id));
+    await save(`/api/expenses?id=${encodeURIComponent(id)}`, "DELETE");
+  }, [save]);
 
   // ── Split operations ─────────────────────────────────────
   const handleSplitExpense = useCallback(async (expenseId, person, share) => {
-    const res = await fetch("/api/splits", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ expenseId, person, share }),
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || "Split failed");
-    }
-    await fetchExpenses();
-  }, [fetchExpenses]);
+    const tempId = `tmp-${crypto.randomUUID()}`;
+    setSplits((prev) => [...prev, { splitId: tempId, expenseId, person, share: Number(share) || 0, repaid: 0, status: "pending" }]);
+    const { splitId } = await save("/api/splits", "POST", { expenseId, person, share });
+    setSplits((prev) => prev.map((s) => (s.splitId === tempId ? { ...s, splitId } : s)));
+  }, [save]);
 
   const handleRecordPayment = useCallback(async (splitId, repaid, status) => {
-    const res = await fetch("/api/splits", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ splitId, repaid, status }),
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || "Payment failed");
-    }
-    await fetchExpenses();
-  }, [fetchExpenses]);
+    patchSplitsLocal({ [splitId]: { repaid, status } });
+    await save("/api/splits", "PATCH", { splitId, repaid, status });
+  }, [save]);
 
   const handleForgive = useCallback(async (splitId, forgiveAmount, person, expenseRef, currentRepaid) => {
-    const res = await fetch("/api/splits", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ splitId, action: "forgive", forgiveAmount, person, expenseRef, currentRepaid }),
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || "Forgive failed");
-    }
-    await fetchExpenses();
-  }, [fetchExpenses]);
+    patchSplitsLocal({ [splitId]: { status: "forgiven", repaid: currentRepaid || 0 } });
+    await save("/api/splits", "PATCH", { splitId, action: "forgive", forgiveAmount, person, expenseRef, currentRepaid });
+  }, [save]);
+
+  // Settle a set of splits (all / a month / by amount) in one request
+  const applySplitUpdates = useCallback(async (updates) => {
+    if (updates.length === 0) return;
+    patchSplitsLocal(Object.fromEntries(updates.map((u) => [u.splitId, { repaid: u.repaid, status: u.status }])));
+    await save("/api/splits", "PATCH", { updates });
+  }, [save]);
+
+  const isOutstanding = (sp) => sp.status !== "forgiven" && toCents(sp.repaid) < toCents(sp.share);
 
   const handleSettleAllForPerson = useCallback(async (person) => {
-    const toSettle = splits.filter(
-      (sp) => sp.person === person && sp.status !== "forgiven" && sp.repaid < sp.share
+    await applySplitUpdates(
+      splits.filter((sp) => sp.person === person && isOutstanding(sp))
+        .map((sp) => ({ splitId: sp.splitId, repaid: sp.share, status: "settled" }))
     );
-    for (const sp of toSettle) {
-      const res = await fetch("/api/splits", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ splitId: sp.splitId, repaid: sp.share, status: "settled" }),
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Settle all failed");
-      }
-    }
-    await fetchExpenses();
-  }, [splits, fetchExpenses]);
+  }, [splits, applySplitUpdates]);
 
   const handleSettleMonthForPerson = useCallback(async (person, yyyymm) => {
     const expenseById = {};
-    expenses.forEach((e) => { if (e.id) expenseById[e.id] = e; });
-    const toSettle = splits.filter((sp) => {
-      if (sp.person !== person || sp.status === "forgiven" || sp.repaid >= sp.share) return false;
-      const date = expenseById[sp.expenseId]?.date;
-      const month = date ? date.slice(0, 7) : "unknown";
-      return month === yyyymm;
-    });
-    for (const sp of toSettle) {
-      const res = await fetch("/api/splits", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ splitId: sp.splitId, repaid: sp.share, status: "settled" }),
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Settle month failed");
-      }
-    }
-    await fetchExpenses();
-  }, [splits, expenses, fetchExpenses]);
+    rawExpenses.forEach((e) => { if (e.id) expenseById[e.id] = e; });
+    await applySplitUpdates(
+      splits.filter((sp) => {
+        if (sp.person !== person || !isOutstanding(sp)) return false;
+        const date = expenseById[sp.expenseId]?.date;
+        return (date ? date.slice(0, 7) : "unknown") === yyyymm;
+      }).map((sp) => ({ splitId: sp.splitId, repaid: sp.share, status: "settled" }))
+    );
+  }, [splits, rawExpenses, applySplitUpdates]);
 
   const handleSettleAmountForPerson = useCallback(async (person, amount) => {
     const expenseById = {};
-    expenses.forEach((e) => { if (e.id) expenseById[e.id] = e; });
+    rawExpenses.forEach((e) => { if (e.id) expenseById[e.id] = e; });
     const { updates } = allocatePayment(splits, expenseById, person, amount);
-    for (const u of updates) {
-      const res = await fetch("/api/splits", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ splitId: u.split.splitId, repaid: u.repaid, status: u.status }),
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Settle amount failed");
-      }
-    }
-    await fetchExpenses();
-  }, [splits, expenses, fetchExpenses]);
+    await applySplitUpdates(updates.map((u) => ({ splitId: u.split.splitId, repaid: u.repaid, status: u.status })));
+  }, [splits, rawExpenses, applySplitUpdates]);
 
   const handleSplitMonths = useCallback(async (expense, monthCount) => {
-    const perMonth = Math.round((expense.amount / monthCount) * 100) / 100;
-    const [startYear, startMonth] = (expense.date || "").split("-").map(Number);
-    if (!startYear || !startMonth) throw new Error("Invalid expense date");
-
-    // Create N installment expenses — call API directly (no re-fetch per add)
-    for (let i = 0; i < monthCount; i++) {
-      const totalMonths = startMonth - 1 + i;
-      const y = startYear + Math.floor(totalMonths / 12);
-      const m = totalMonths % 12;
-      // First month keeps the original date, subsequent months use the 1st
-      const installDate = i === 0 ? expense.date : `${y}-${String(m + 1).padStart(2, "0")}-01`;
-      const res = await fetch("/api/expenses", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          date: installDate,
-          vendor: expense.vendor || expense.name,
-          name: expense.name || expense.vendor,
-          category: expense.category,
-          amount: perMonth,
-          notes: expense.notes ? `${expense.notes} (${i + 1}/${monthCount})` : `${expense.vendor || expense.name} (${i + 1}/${monthCount})`,
-        }),
-      });
-      if (!res.ok) throw new Error("Failed to create installment");
-    }
-    // Archive the original — zero out amount and mark in notes (keeps traceability)
-    const archiveRes = await fetch("/api/expenses", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        id: expense.id,
-        amount: 0,
-        notes: `[Split into ${monthCount} months] ${expense.notes || ""}`.trim(),
-      }),
+    const rows = buildInstallments(
+      { date: expense.date, amount: expense.amount, notes: expense.notes, label: expense.vendor || expense.name },
+      monthCount
+    ).map((r) => ({
+      ...r,
+      vendor: expense.vendor || expense.name,
+      name: expense.name || expense.vendor,
+      category: expense.category,
+    }));
+    // Original is archived (amount 0 + note) rather than deleted, for traceability
+    await handleAddExpense(rows, {
+      id: expense.id,
+      amount: 0,
+      notes: `[Split into ${monthCount} months] ${expense.notes || ""}`.trim(),
     });
-    if (!archiveRes.ok) throw new Error("Failed to archive original expense");
-    // Single re-fetch at the end
-    await fetchExpenses();
-  }, [fetchExpenses]);
+  }, [handleAddExpense]);
 
   const handleDeleteSplit = useCallback(async (splitId) => {
-    const res = await fetch(`/api/splits?splitId=${encodeURIComponent(splitId)}`, {
-      method: "DELETE",
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || "Delete split failed");
-    }
-    await fetchExpenses();
-  }, [fetchExpenses]);
+    setSplits((prev) => prev.filter((s) => s.splitId !== splitId));
+    await save(`/api/splits?splitId=${encodeURIComponent(splitId)}`, "DELETE");
+  }, [save]);
 
   // ── Tab rendering ─────────────────────────────────────────────
   const tabProps = { monthData, byMonth, monthKeys, selectedMonth, expenses };
@@ -487,8 +463,14 @@ export default function Dashboard() {
           <div>
             <h1 className="header-title">Expense Dashboard</h1>
             <p className="header-sub">
-              Live from Google Sheets
-              {lastUpdated && ` · Updated ${new Date(lastUpdated).toLocaleString()}`}
+              {pendingSaves > 0 ? (
+                <span className="saving-indicator" aria-live="polite">Saving to Google Sheets…</span>
+              ) : (
+                <>
+                  Live from Google Sheets
+                  {lastUpdated && ` · Updated ${new Date(lastUpdated).toLocaleString()}`}
+                </>
+              )}
             </p>
           </div>
           <div className="header-actions">
@@ -501,12 +483,12 @@ export default function Dashboard() {
               {isDark ? "☀" : "☾"}
             </button>
             <button
-              onClick={fetchExpenses}
+              onClick={() => fetchExpenses({ silent: true })}
               className="btn-primary"
-              disabled={loading}
+              disabled={loading || refreshing}
               aria-label="Refresh data from Google Sheets"
             >
-              {loading ? "Loading…" : "Refresh"}
+              {loading ? "Loading…" : refreshing ? "Refreshing…" : "Refresh"}
             </button>
           </div>
         </div>
@@ -548,7 +530,7 @@ export default function Dashboard() {
             <strong>Error loading data:</strong> {error}
             <br />
             <button
-              onClick={fetchExpenses}
+              onClick={() => fetchExpenses()}
               className="btn-primary"
               style={{ marginTop: 16 }}
             >
@@ -582,6 +564,13 @@ export default function Dashboard() {
           </>
         )}
       </main>
+
+      {saveError && (
+        <div className="save-toast" role="alert">
+          <span>Couldn&apos;t save: {saveError}. Showing what&apos;s in your sheet.</span>
+          <button onClick={() => setSaveError(null)} className="save-toast-close" aria-label="Dismiss">×</button>
+        </div>
+      )}
     </div>
   );
 }

@@ -131,57 +131,62 @@ export async function ensureColumns() {
   }
 }
 
-// Update a row by ID
-export async function updateRow(id, fields) {
+// Update many rows in one request. Every ID is checked before anything is
+// written, so a bad ID can't leave the sheet half-updated.
+export async function updateRows(updates) {
+  if (updates.length === 0) return;
   const client = await getClient();
   const spreadsheetId = getSheetId();
   const { headers, data, sheetName } = await readAllRows();
+  const byId = new Map(data.map((r) => [r.ID, r]));
 
-  const row = data.find((r) => r.ID === id);
-  if (!row) throw new Error(`Row with ID ${id} not found`);
-
-  const updates = [];
-  for (const [field, value] of Object.entries(fields)) {
-    const colIdx = headers.indexOf(field);
-    if (colIdx === -1) continue;
-    const colLetter = colToLetter(colIdx);
-    updates.push({
-      range: `${sheetName}!${colLetter}${row._rowIndex}`,
-      values: [[value === null || value === undefined ? "" : value]],
-    });
+  const ranges = [];
+  for (const { id, fields } of updates) {
+    const row = byId.get(id);
+    if (!row) throw new Error(`Row with ID ${id} not found`);
+    for (const [field, value] of Object.entries(fields)) {
+      const colIdx = headers.indexOf(field);
+      if (colIdx === -1) continue;
+      ranges.push({
+        range: `${sheetName}!${colToLetter(colIdx)}${row._rowIndex}`,
+        values: [[value === null || value === undefined ? "" : value]],
+      });
+    }
   }
-
-  if (updates.length === 0) return;
+  if (ranges.length === 0) return;
 
   await client.request({
     url: `${API}/${spreadsheetId}/values:batchUpdate`,
     method: "POST",
-    data: {
-      valueInputOption: "RAW",
-      data: updates,
-    },
+    data: { valueInputOption: "RAW", data: ranges },
   });
 }
 
-// Append a new row
-export async function appendRow(fields) {
+export async function updateRow(id, fields) {
+  return updateRows([{ id, fields }]);
+}
+
+// Append many rows in one request; returns their new IDs in order
+export async function appendRows(list) {
+  if (list.length === 0) return [];
   const client = await getClient();
   const spreadsheetId = getSheetId();
   const { headers, sheetName } = await readAllRows();
 
-  const id = crypto.randomUUID();
-  const row = headers.map((h) => {
-    if (h === "ID") return id;
-    return fields[h] ?? "";
-  });
+  const ids = list.map(() => crypto.randomUUID());
+  const values = list.map((fields, i) => headers.map((h) => (h === "ID" ? ids[i] : fields[h] ?? "")));
 
   await client.request({
     url: `${API}/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A:A:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
     method: "POST",
-    data: { values: [row] },
+    data: { values },
   });
 
-  return id;
+  return ids;
+}
+
+export async function appendRow(fields) {
+  return (await appendRows([fields]))[0];
 }
 
 // Delete a row by ID
@@ -296,49 +301,54 @@ export async function addSplit(expenseId, person, share) {
   return splitId;
 }
 
-// Update a split (Repaid amount or Status)
-export async function updateSplit(splitId, fields) {
-  const client = await getClient();
-  const spreadsheetId = getSheetId();
-
+async function readSplitRows(client, spreadsheetId) {
   const res = await client.request({
     url: `${API}/${spreadsheetId}/values/${encodeURIComponent(SPLITS_TAB)}`,
   });
   const rows = res.data.values || [];
-  if (rows.length <= 1) throw new Error("Split not found");
-
-  const headers = rows[0];
-  let targetRow = null;
-  for (let i = 1; i < rows.length; i++) {
-    const sidIdx = headers.indexOf("SplitID");
-    if (rows[i][sidIdx] === splitId) {
-      targetRow = i + 1; // 1-based sheet row
-      break;
-    }
-  }
-  if (!targetRow) throw new Error(`Split ${splitId} not found`);
-
-  const updates = [];
-  for (const [field, value] of Object.entries(fields)) {
-    const colIdx = headers.indexOf(field);
-    if (colIdx === -1) continue;
-    updates.push({
-      range: `${SPLITS_TAB}!${colToLetter(colIdx)}${targetRow}`,
-      values: [[value === null || value === undefined ? "" : value]],
-    });
-  }
-
-  if (updates.length > 0) {
-    await client.request({
-      url: `${API}/${spreadsheetId}/values:batchUpdate`,
-      method: "POST",
-      data: { valueInputOption: "RAW", data: updates },
-    });
-  }
+  const headers = rows[0] || [];
+  const sidIdx = headers.indexOf("SplitID");
+  const rowById = new Map();
+  for (let i = 1; i < rows.length; i++) rowById.set(rows[i][sidIdx], i); // 0-based row index
+  return { headers, rowById };
 }
 
-// Delete a split
-export async function deleteSplit(splitId) {
+// Update many splits (Repaid / Status) in one request; all IDs checked first
+export async function updateSplits(updates) {
+  if (updates.length === 0) return;
+  const client = await getClient();
+  const spreadsheetId = getSheetId();
+  const { headers, rowById } = await readSplitRows(client, spreadsheetId);
+
+  const ranges = [];
+  for (const { splitId, fields } of updates) {
+    const idx = rowById.get(splitId);
+    if (idx === undefined) throw new Error(`Split ${splitId} not found`);
+    for (const [field, value] of Object.entries(fields)) {
+      const colIdx = headers.indexOf(field);
+      if (colIdx === -1) continue;
+      ranges.push({
+        range: `${SPLITS_TAB}!${colToLetter(colIdx)}${idx + 1}`,
+        values: [[value === null || value === undefined ? "" : value]],
+      });
+    }
+  }
+  if (ranges.length === 0) return;
+
+  await client.request({
+    url: `${API}/${spreadsheetId}/values:batchUpdate`,
+    method: "POST",
+    data: { valueInputOption: "RAW", data: ranges },
+  });
+}
+
+export async function updateSplit(splitId, fields) {
+  return updateSplits([{ splitId, fields }]);
+}
+
+// Delete many splits in one request
+export async function deleteSplits(splitIds) {
+  if (splitIds.length === 0) return;
   const client = await getClient();
   const spreadsheetId = getSheetId();
 
@@ -351,33 +361,29 @@ export async function deleteSplit(splitId) {
   if (!splitsSheet) throw new Error("Splits tab not found");
   const splitsGid = splitsSheet.properties.sheetId;
 
-  const res = await client.request({
-    url: `${API}/${spreadsheetId}/values/${encodeURIComponent(SPLITS_TAB)}`,
+  const { rowById } = await readSplitRows(client, spreadsheetId);
+  const indexes = splitIds.map((id) => {
+    const idx = rowById.get(id);
+    if (idx === undefined) throw new Error(`Split ${id} not found`);
+    return idx;
   });
-  const rows = res.data.values || [];
-  const headers = rows[0] || [];
-  const sidIdx = headers.indexOf("SplitID");
 
-  let targetRowIdx = null;
-  for (let i = 1; i < rows.length; i++) {
-    if (rows[i][sidIdx] === splitId) {
-      targetRowIdx = i;
-      break;
-    }
-  }
-  if (targetRowIdx === null) throw new Error(`Split ${splitId} not found`);
-
+  // Bottom-up so earlier deletions don't shift the rows still to delete
   await client.request({
     url: `${API}/${spreadsheetId}:batchUpdate`,
     method: "POST",
     data: {
-      requests: [{
+      requests: [...new Set(indexes)].sort((a, b) => b - a).map((idx) => ({
         deleteDimension: {
-          range: { sheetId: splitsGid, dimension: "ROWS", startIndex: targetRowIdx, endIndex: targetRowIdx + 1 },
+          range: { sheetId: splitsGid, dimension: "ROWS", startIndex: idx, endIndex: idx + 1 },
         },
-      }],
+      })),
     },
   });
+}
+
+export async function deleteSplit(splitId) {
+  return deleteSplits([splitId]);
 }
 
 // Check if write is configured
