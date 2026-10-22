@@ -11,12 +11,14 @@ import { withNetAmounts, buildInstallments, toCents } from "./lib/money";
 import AssetsTab from "./components/AssetsTab";
 import ErrorBoundary from "./components/ErrorBoundary";
 import DateRangePicker from "./components/DateRangePicker";
+import MonthSwitcher, { useMonthSwipe } from "./components/MonthSwitcher";
+import AddExpenseModal from "./components/AddExpenseModal";
+import { getAllCategories } from "./lib/categories";
 import TopCategories from "./components/TopCategories";
 import { runInsights } from "./lib/insights";
 import { getBudgets, setBudget, deleteBudget } from "./lib/budgets";
 import { getSetting, setSetting, syncSettings, subscribeSettings } from "./lib/settings";
 import { applyTheme, getTheme } from "./lib/theme";
-import { formatMonthLabel } from "./lib/constants";
 
 function SkeletonLoader() {
   return (
@@ -52,6 +54,7 @@ export default function Dashboard() {
   const [settingsReady, setSettingsReady] = useState(false);
   const [, setSettingsVersion] = useState(0);
   const [dateRange, setDateRange] = useState({ start: null, end: null });
+  const [showQuickAdd, setShowQuickAdd] = useState(false);
   const transactionsSearchRef = useRef(null);
 
   // ── Fetch ────────────────────────────────────────────────────
@@ -413,6 +416,14 @@ export default function Dashboard() {
     await save(`/api/splits?splitId=${encodeURIComponent(splitId)}`, "DELETE");
   }, [save]);
 
+  // Swipe left/right on month-based tabs (Overview, Trends, Insights)
+  const swipe = useMonthSwipe({
+    monthKeys,
+    selectedMonth,
+    onChange: setSelectedMonth,
+    enabled: [0, 2, 3].includes(activeTab),
+  });
+
   // ── Tab rendering ─────────────────────────────────────────────
   const tabProps = { monthData, byMonth, monthKeys, selectedMonth, expenses };
 
@@ -513,18 +524,8 @@ export default function Dashboard() {
 
         {/* Month selector + Date range picker */}
         {!loading && !error && monthKeys.length > 0 && (
-          <div className="month-selector" role="group" aria-label="Select month">
-            {monthKeys.map((m) => (
-              <button
-                key={m}
-                onClick={() => setSelectedMonth(m)}
-                className={`month-pill${selectedMonth === m ? " active" : ""}`}
-                aria-pressed={selectedMonth === m}
-                aria-label={`View ${formatMonthLabel(m, false)}`}
-              >
-                {formatMonthLabel(m)}
-              </button>
-            ))}
+          <div className="month-selector">
+            <MonthSwitcher monthKeys={monthKeys} selectedMonth={selectedMonth} onChange={setSelectedMonth} />
             <DateRangePicker
               startDate={dateRange.start}
               endDate={dateRange.end}
@@ -540,7 +541,13 @@ export default function Dashboard() {
       )}
 
       {/* ── Main content ───────────────────────────────────── */}
-      <main id="main-content" className="main-content" tabIndex={-1}>
+      <main
+        id="main-content"
+        className="main-content"
+        tabIndex={-1}
+        onTouchStart={swipe.onTouchStart}
+        onTouchEnd={swipe.onTouchEnd}
+      >
         {loading || !settingsReady ? (
           <SkeletonLoader />
         ) : error ? (
@@ -582,6 +589,20 @@ export default function Dashboard() {
           </>
         )}
       </main>
+
+      {/* Quick add — the phone's main action, one thumb away */}
+      {writeEnabled && !loading && !error && activeTab !== 4 && (
+        <button className="fab" onClick={() => setShowQuickAdd(true)} aria-label="Add expense">
+          <span aria-hidden="true">+</span>
+        </button>
+      )}
+      {showQuickAdd && (
+        <AddExpenseModal
+          categories={getAllCategories(expenses)}
+          onAdd={handleAddExpense}
+          onClose={() => setShowQuickAdd(false)}
+        />
+      )}
 
       {saveError && (
         <div className="save-toast" role="alert">
