@@ -13,6 +13,7 @@ import {
   isWriteConfigured,
 } from "../../lib/sheets";
 import { readAllPhotos, softDeletePhoto } from "../../lib/photos";
+import { withNetAmounts } from "../../lib/money";
 
 function normalize(row) {
   let date = row.Date || null;
@@ -63,35 +64,12 @@ export async function GET() {
       status: s.Status || "pending",
     }));
 
-    // Pre-compute netAmount on each expense
-    // Active splits: subtract share (stable — your portion doesn't change as they pay)
-    // Forgiven splits: subtract only repaid (forgiven portion = your cost)
-    // Overpaid: if repaid > share, subtract repaid (extra goes to you)
-    for (const exp of expenses) {
-      const expSplits = normalizedSplits.filter((s) => s.expenseId === exp.id);
-      if (expSplits.length > 0) {
-        let totalDeduction = 0;
-        for (const sp of expSplits) {
-          if (sp.status === "forgiven") {
-            // Forgiven: only what they actually repaid reduces your cost
-            totalDeduction += sp.repaid;
-          } else if (sp.repaid > sp.share) {
-            // Overpaid: full repaid amount (extra goes to you)
-            totalDeduction += sp.repaid;
-          } else {
-            // Active/pending/partial/settled: subtract their share (stable)
-            totalDeduction += sp.share;
-          }
-        }
-        exp.netAmount = exp.amount - totalDeduction;
-      } else {
-        exp.netAmount = exp.amount - exp.repaid;
-      }
-    }
+    // Your cost per expense — see app/lib/money.js for the rules
+    const expensesWithNet = withNetAmounts(expenses, normalizedSplits);
 
     return NextResponse.json(
       {
-        expenses,
+        expenses: expensesWithNet,
         splits: normalizedSplits,
         count: expenses.length,
         lastUpdated: new Date().toISOString(),
