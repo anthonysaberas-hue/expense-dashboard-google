@@ -4,6 +4,7 @@ import { formatCurrency, formatMonthLabel } from "../lib/constants";
 import EmptyState from "./EmptyState";
 import NotesModal from "./NotesModal";
 import { allocatePayment } from "../lib/allocatePayment";
+import { summarizeSplits, splitStatus, toCents, fromCents } from "../lib/money";
 
 export default function PeopleTab({
   expenses = [],
@@ -26,26 +27,15 @@ export default function PeopleTab({
   const [lumpInputs, setLumpInputs] = useState({});
   const [lumpBusy, setLumpBusy] = useState(null);
 
-  // Aggregate balances per person
+  // Aggregate balances per person (rules live in lib/money.js)
   const people = useMemo(() => {
     const map = {};
     for (const sp of splits) {
       if (!sp.person) continue;
-      if (!map[sp.person]) map[sp.person] = { person: sp.person, splits: [], totalShare: 0, totalRepaid: 0, totalForgiven: 0 };
-      map[sp.person].splits.push(sp);
-      map[sp.person].totalShare += sp.share;
-      if (sp.status === "forgiven") {
-        map[sp.person].totalForgiven += sp.share - sp.repaid;
-      } else {
-        map[sp.person].totalRepaid += sp.repaid;
-      }
+      (map[sp.person] ||= []).push(sp);
     }
-
-    return Object.values(map)
-      .map((p) => ({
-        ...p,
-        balance: p.totalShare - p.totalRepaid - p.totalForgiven,
-      }))
+    return Object.entries(map)
+      .map(([person, personSplits]) => ({ person, splits: personSplits, ...summarizeSplits(personSplits) }))
       .sort((a, b) => b.balance - a.balance);
   }, [splits]);
 
@@ -63,17 +53,10 @@ export default function PeopleTab({
       for (const sp of p.splits) {
         const exp = expenseMap[sp.expenseId];
         const month = exp?.date ? exp.date.slice(0, 7) : "unknown";
-        if (!monthMap[month]) monthMap[month] = { month, splits: [], totalShare: 0, totalRepaid: 0, totalForgiven: 0 };
-        monthMap[month].splits.push(sp);
-        monthMap[month].totalShare += sp.share;
-        if (sp.status === "forgiven") {
-          monthMap[month].totalForgiven += sp.share - sp.repaid;
-        } else {
-          monthMap[month].totalRepaid += sp.repaid;
-        }
+        (monthMap[month] ||= { month, splits: [] }).splits.push(sp);
       }
       const months = Object.values(monthMap)
-        .map((m) => ({ ...m, balance: m.totalShare - m.totalRepaid - m.totalForgiven }))
+        .map((m) => ({ ...m, ...summarizeSplits(m.splits) }))
         .sort((a, b) => (a.month < b.month ? 1 : a.month > b.month ? -1 : 0));
       return { ...p, months };
     });
@@ -126,7 +109,7 @@ Partially pays ${exp ? exp.vendor || exp.name : "a transaction"} (${formatCurren
   }, [onSettleAmount, expenseMap]);
 
   const handleForgive = useCallback(async (split) => {
-    const remaining = split.share - split.repaid;
+    const remaining = fromCents(toCents(split.share) - toCents(split.repaid));
     if (remaining <= 0) return;
     const expense = expenseMap[split.expenseId];
     const expenseRef = expense ? `${expense.vendor || expense.name} (${expense.date})` : split.expenseId;
@@ -351,7 +334,7 @@ Partially pays ${exp ? exp.vendor || exp.name : "a transaction"} (${formatCurren
                             <tbody>
                               {mg.splits.map((sp) => {
                                 const exp = expenseMap[sp.expenseId];
-                                const remaining = sp.share - sp.repaid;
+                                const remaining = fromCents(toCents(sp.share) - toCents(sp.repaid));
                                 return (
                                   <tr key={sp.splitId}>
                                     <td style={{ color: "var(--text-muted)" }}>{exp?.date || "—"}</td>
@@ -402,8 +385,7 @@ Partially pays ${exp ? exp.vendor || exp.name : "a transaction"} (${formatCurren
                                             const val = parseFloat(paymentInputs[sp.splitId]);
                                             if (!isNaN(val) && val !== sp.repaid) {
                                               const amount = Math.max(val, 0);
-                                              const newStatus = amount > sp.share ? "overpaid" : amount >= sp.share ? "settled" : amount > 0 ? "partial" : "pending";
-                                              onRecordPayment?.(sp.splitId, amount, newStatus);
+                                              onRecordPayment?.(sp.splitId, amount, splitStatus(sp.share, amount));
                                             }
                                             setPaymentInputs((prev) => { const n = { ...prev }; delete n[sp.splitId]; return n; });
                                           }}

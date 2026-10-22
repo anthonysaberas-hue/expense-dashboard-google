@@ -3,6 +3,7 @@ import { useMemo, useState, useCallback, useEffect } from "react";
 import { getCatColor, formatCurrency, formatMonthLabel, MONTHS, getNetAmount, getPrevMonths } from "../lib/constants";
 import EditableCell from "./EditableCell";
 import { getAllCategories } from "../lib/categories";
+import { toCents, fromCents, summarizeSplits } from "../lib/money";
 import NotesCell from "./NotesCell";
 import AddExpenseModal from "./AddExpenseModal";
 import SplitModal from "./SplitModal";
@@ -272,7 +273,10 @@ export default function OverviewTab({
     return data;
   }, [monthData, excludedCats, excludedIds]);
 
-  const total = useMemo(() => activeData.reduce((s, e) => s + getNetAmount(e), 0), [activeData]);
+  // "Your cost" (net of others' shares) is what every total here shows — see lib/money.js
+  const total = useMemo(() => fromCents(activeData.reduce((s, e) => s + toCents(getNetAmount(e)), 0)), [activeData]);
+  const grossPaid = useMemo(() => fromCents(activeData.reduce((s, e) => s + toCents(e.amount), 0)), [activeData]);
+  const othersShare = fromCents(toCents(grossPaid) - toCents(total));
   const currentIdx = monthKeys.indexOf(selectedMonth);
   const prevMonth = currentIdx > 0 ? monthKeys[currentIdx - 1] : null;
   const prevData = prevMonth ? (byMonth[prevMonth] || []) : [];
@@ -384,7 +388,7 @@ export default function OverviewTab({
     { key: "date", label: "Date" },
     { key: "amount", label: "Amount" },
     { key: "category", label: "Category" },
-    { key: "repaid", label: "Settled" },
+    { key: "repaid", label: "Paid back" },
     { key: "notes", label: "Notes" },
     ...(writeEnabled ? [{ key: "_split", label: "" }] : []),
   ];
@@ -421,7 +425,13 @@ export default function OverviewTab({
 
       {/* KPI Grid */}
       <div className="kpi-grid" style={{ marginBottom: 16 }}>
-        <StatCard label={`${selectedLabel} total`} value={formatCurrency(total)} sub={`${monthData.length} transactions`} />
+        <StatCard
+          label={`Your cost · ${selectedLabel}`}
+          value={formatCurrency(total)}
+          sub={othersShare !== 0
+            ? `You paid ${formatCurrency(grossPaid)} · ${formatCurrency(othersShare)} is others' share`
+            : `${monthData.length} transactions`}
+        />
         <StatCard
           label={prevLabel ? `vs ${prevLabel}` : "Month change"}
           value={pct !== null ? `${isUp ? "+" : ""}${pct}%` : "—"}
@@ -579,15 +589,21 @@ export default function OverviewTab({
                       <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
                         {(() => {
                           const expSplits = splits.filter((s) => s.expenseId === e.id);
-                          const totalRepaid = expSplits.reduce((s, sp) => s + sp.repaid, 0);
-                          const totalForgiven = expSplits.filter((s) => s.status === "forgiven").reduce((s, sp) => s + (sp.share - sp.repaid), 0);
-                          const total = totalRepaid + totalForgiven;
-                          if (total > 0 || expSplits.length > 0) {
+                          const { totalRepaid, totalForgiven } = summarizeSplits(expSplits);
+                          if (expSplits.length > 0) {
                             return (
-                              <span style={{ color: "var(--green)", fontWeight: 600 }}>
-                                {formatCurrency(total)}
-                              </span>
+                              <>
+                                <span style={{ color: totalRepaid > 0 ? "var(--green)" : "var(--text-muted)", fontWeight: 600, display: "block" }}>
+                                  {formatCurrency(totalRepaid)}
+                                </span>
+                                {totalForgiven > 0 && (
+                                  <span style={{ fontSize: 10, color: "var(--amber)", display: "block" }}>forgave {formatCurrency(totalForgiven)}</span>
+                                )}
+                              </>
                             );
+                          }
+                          if (e.repaid > 0) {
+                            return <span style={{ color: "var(--green)", fontWeight: 600 }}>{formatCurrency(e.repaid)}</span>;
                           }
                           return <span style={{ color: "var(--text-muted)" }}>—</span>;
                         })()}
