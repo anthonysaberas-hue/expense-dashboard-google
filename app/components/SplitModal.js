@@ -2,6 +2,7 @@
 import { useState, useMemo, useRef } from "react";
 import { formatCurrency } from "../lib/constants";
 import { getSetting, setSetting } from "../lib/settings";
+import { toCents, fromCents, evenShare, shareFromPercent, percentOf, buildInstallments } from "../lib/money";
 
 function getKnownPeople() {
   return getSetting("known_people");
@@ -14,10 +15,12 @@ function addKnownPerson(name) {
   }
 }
 
+const emptyRow = () => ({ person: "", share: "", pct: "" });
+
 export default function SplitModal({ expense, existingSplits = [], onSplit, onSplitMonths, onClose }) {
   const [tab, setTab] = useState("people"); // "months" | "people"
-  // People split state
-  const [rows, setRows] = useState([{ person: "", share: "" }]);
+  // People split state — each row keeps both $ and %, whichever was typed drives the other
+  const [rows, setRows] = useState([emptyRow()]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [suggestions, setSuggestions] = useState([]);
@@ -27,13 +30,21 @@ export default function SplitModal({ expense, existingSplits = [], onSplit, onSp
   const [monthCount, setMonthCount] = useState("2");
 
   const knownPeople = useMemo(() => getKnownPeople(), []);
-  const alreadySplit = existingSplits.reduce((s, sp) => s + sp.share, 0);
-  const remaining = expense.amount - alreadySplit;
+  const total = expense.amount;
+  const alreadySplitCents = existingSplits.reduce((s, sp) => s + toCents(sp.share), 0);
+  const alreadySplit = fromCents(alreadySplitCents);
+  const remaining = fromCents(toCents(total) - alreadySplitCents);
 
-  const addRow = () => setRows((r) => [...r, { person: "", share: "" }]);
+  const addRow = () => setRows((r) => [...r, emptyRow()]);
   const removeRow = (idx) => setRows((r) => r.filter((_, i) => i !== idx));
+
   const updateRow = (idx, field, value) => {
-    setRows((r) => r.map((row, i) => (i === idx ? { ...row, [field]: value } : row)));
+    setRows((r) => r.map((row, i) => {
+      if (i !== idx) return row;
+      if (field === "share") return { ...row, share: value, pct: value ? String(percentOf(total, parseFloat(value))) : "" };
+      if (field === "pct") return { ...row, pct: value, share: value ? shareFromPercent(total, parseFloat(value)).toFixed(2) : "" };
+      return { ...row, [field]: value };
+    }));
     setError("");
     if (field === "person" && value.length > 0) {
       setSuggestions(knownPeople.filter((p) => p.toLowerCase().startsWith(value.toLowerCase())));
@@ -50,14 +61,33 @@ export default function SplitModal({ expense, existingSplits = [], onSplit, onSp
     setFocusedRow(-1);
   };
 
-  const totalShare = rows.reduce((s, r) => s + (parseFloat(r.share) || 0), 0);
+  const totalShareCents = rows.reduce((s, r) => s + toCents(parseFloat(r.share) || 0), 0);
+  const yourShare = fromCents(toCents(total) - alreadySplitCents - totalShareCents);
+
+  // Tapping an empty % box fills 50% (or whatever is left, if less)
+  const fillDefaultPercent = (idx, target) => {
+    if (rows[idx].pct !== "") return;
+    const othersCents = rows.reduce((s, r, i) => (i === idx ? s : s + toCents(parseFloat(r.share) || 0)), 0);
+    const leftPct = percentOf(total, fromCents(toCents(total) - alreadySplitCents - othersCents));
+    updateRow(idx, "pct", String(Math.max(0, Math.min(50, leftPct))));
+    // Select it so typing replaces the 50
+    requestAnimationFrame(() => { try { target.select(); } catch { /* not supported on this input */ } });
+  };
+
+  // Everyone listed (plus anyone already split, plus you) pays the same
+  const evenPeople = rows.length + existingSplits.length;
+  const splitEvenly = () => {
+    const each = evenShare(total, evenPeople);
+    setRows((r) => r.map((row) => ({ ...row, share: each.toFixed(2), pct: String(percentOf(total, each)) })));
+    setError("");
+  };
 
   // People split submit
   const handlePeopleSubmit = async (e) => {
     e.preventDefault();
-    const valid = rows.filter((r) => r.person && r.share);
+    const valid = rows.filter((r) => r.person.trim() && parseFloat(r.share) > 0);
     if (valid.length === 0) return setError("Add at least one person and amount");
-    if (totalShare + alreadySplit > expense.amount) return setError("Total splits exceed expense amount");
+    if (alreadySplitCents + totalShareCents > toCents(total)) return setError("Total splits exceed expense amount");
 
     setSaving(true);
     try {
@@ -75,7 +105,9 @@ export default function SplitModal({ expense, existingSplits = [], onSplit, onSp
 
   // Month split submit
   const mc = Math.max(2, parseInt(monthCount) || 2);
-  const perMonth = Math.round((expense.amount / mc) * 100) / 100;
+  const installments = buildInstallments({ date: expense.date || "2000-01-01", amount: total }, mc);
+  const perMonth = installments[0].amount;
+  const lastMonth = installments.at(-1).amount;
 
   const handleMonthSubmit = async (e) => {
     e.preventDefault();
@@ -102,7 +134,7 @@ export default function SplitModal({ expense, existingSplits = [], onSplit, onSp
           <div style={{ background: "var(--bg)", borderRadius: "var(--radius-sm)", padding: "10px 14px", marginBottom: 12, border: "1px solid var(--border)" }}>
             <div style={{ fontWeight: 600, fontSize: 14 }}>{expense.vendor || expense.name}</div>
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
-              {expense.date} · {formatCurrency(expense.amount)}
+              {expense.date} · {formatCurrency(total)}
               {alreadySplit > 0 && <span> · Already split with people: {formatCurrency(alreadySplit)}</span>}
             </div>
           </div>
@@ -144,6 +176,7 @@ export default function SplitModal({ expense, existingSplits = [], onSplit, onSp
                 <label className="modal-label">Number of months</label>
                 <input
                   type="number"
+                  inputMode="numeric"
                   min="2"
                   max="24"
                   value={monthCount}
@@ -154,10 +187,11 @@ export default function SplitModal({ expense, existingSplits = [], onSplit, onSp
                 />
               </div>
               <div style={{ fontSize: 12, color: "var(--green)", fontWeight: 600, marginBottom: 12, padding: "8px 12px", background: "var(--green-light)", borderRadius: 6 }}>
-                {formatCurrency(expense.amount)} ÷ {mc} = {formatCurrency(perMonth)}/month
+                {formatCurrency(total)} ÷ {mc} = {formatCurrency(perMonth)}/month
+                {lastMonth !== perMonth && ` (last month ${formatCurrency(lastMonth)})`}
               </div>
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 12 }}>
-                This will replace the original {formatCurrency(expense.amount)} expense with {mc} separate {formatCurrency(perMonth)} expenses starting from {expense.date?.substring(0, 7)}.
+                This will replace the original {formatCurrency(total)} expense with {mc} separate monthly expenses starting from {expense.date?.substring(0, 7)}.
               </div>
               {error && <p className="modal-error">{error}</p>}
               <div className="modal-actions">
@@ -172,8 +206,13 @@ export default function SplitModal({ expense, existingSplits = [], onSplit, onSp
           {/* People split tab */}
           {tab === "people" && (
             <form onSubmit={handlePeopleSubmit}>
-              <div style={{ fontSize: 12, color: "var(--green)", fontWeight: 600, marginBottom: 10 }}>
-                Available to split: {formatCurrency(remaining)}
+              <div className="split-quick">
+                <span style={{ fontSize: 12, color: "var(--green)", fontWeight: 600 }}>
+                  Available to split: {formatCurrency(remaining)}
+                </span>
+                <button type="button" onClick={splitEvenly} className="btn-ghost split-quick-btn">
+                  {evenPeople === 1 ? "½ Split in half" : `Split evenly ÷${evenPeople + 1}`}
+                </button>
               </div>
               {rows.map((row, idx) => (
                 <div key={idx} className="split-row">
@@ -182,6 +221,7 @@ export default function SplitModal({ expense, existingSplits = [], onSplit, onSp
                       ref={(el) => (inputRefs.current[idx] = el)}
                       type="text"
                       placeholder="Person name"
+                      autoCapitalize="words"
                       value={row.person}
                       onChange={(e) => updateRow(idx, "person", e.target.value)}
                       onFocus={() => {
@@ -205,18 +245,39 @@ export default function SplitModal({ expense, existingSplits = [], onSplit, onSp
                       </div>
                     )}
                   </div>
-                  <input
-                    type="number"
-                    step="0.01"
-                    placeholder="Amount"
-                    value={row.share}
-                    onChange={(e) => updateRow(idx, "share", e.target.value)}
-                    className="search-input"
-                    style={{ width: 100 }}
-                  />
-                  {rows.length > 1 && (
-                    <button type="button" onClick={() => removeRow(idx)} className="delete-row-btn" aria-label="Remove">×</button>
-                  )}
+                  <div className="split-row-amounts">
+                    <label className="split-amount-field">
+                      <span aria-hidden="true">$</span>
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        step="0.01"
+                        min="0"
+                        placeholder="0.00"
+                        value={row.share}
+                        onChange={(e) => updateRow(idx, "share", e.target.value)}
+                        aria-label={`Amount for ${row.person || `person ${idx + 1}`}`}
+                      />
+                    </label>
+                    <label className="split-amount-field split-pct-field">
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        step="0.1"
+                        min="0"
+                        max="100"
+                        placeholder="%"
+                        value={row.pct}
+                        onFocus={(e) => fillDefaultPercent(idx, e.target)}
+                        onChange={(e) => updateRow(idx, "pct", e.target.value)}
+                        aria-label={`Percent for ${row.person || `person ${idx + 1}`}`}
+                      />
+                      <span aria-hidden="true">%</span>
+                    </label>
+                    {rows.length > 1 && (
+                      <button type="button" onClick={() => removeRow(idx)} className="delete-row-btn" aria-label="Remove">×</button>
+                    )}
+                  </div>
                 </div>
               ))}
 
@@ -224,9 +285,9 @@ export default function SplitModal({ expense, existingSplits = [], onSplit, onSp
                 + Add another person
               </button>
 
-              {totalShare > 0 && (
-                <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 10, textAlign: "right" }}>
-                  Your share: {formatCurrency(expense.amount - alreadySplit - totalShare)}
+              {totalShareCents > 0 && (
+                <div style={{ fontSize: 12, color: yourShare < 0 ? "var(--red)" : "var(--text-muted)", marginTop: 10, textAlign: "right" }}>
+                  Your share: {formatCurrency(yourShare)} ({percentOf(total, yourShare)}%)
                 </div>
               )}
 

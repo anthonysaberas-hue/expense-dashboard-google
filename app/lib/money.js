@@ -65,6 +65,23 @@ export function splitStatus(share, repaid) {
   return r > 0 ? "partial" : "pending";
 }
 
+// Each person's share when `total` is split evenly between `people` others
+// and you. Rounded down to the cent; you absorb the leftover cent(s).
+export function evenShare(total, people) {
+  return fromCents(Math.floor(toCents(total) / (Math.max(0, people) + 1)));
+}
+
+// `pct` percent of `total`, to the nearest cent
+export function shareFromPercent(total, pct) {
+  return fromCents(Math.round((toCents(total) * (Number(pct) || 0)) / 100));
+}
+
+// What percent of `total` a `share` is, to one decimal (for display)
+export function percentOf(total, share) {
+  const t = toCents(total);
+  return t === 0 ? 0 : Math.round((toCents(share) / t) * 1000) / 10;
+}
+
 // YYYY-MM-DD in the user's local timezone (toISOString() is UTC, which is
 // the wrong day for part of every evening/morning)
 export function localDateString(d = new Date()) {

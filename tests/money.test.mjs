@@ -7,6 +7,9 @@ import {
   splitStatus,
   buildInstallments,
   localDateString,
+  evenShare,
+  shareFromPercent,
+  percentOf,
 } from "../app/lib/money.js";
 
 const split = (share, repaid, status = "pending", expenseId = "e1") => ({ expenseId, share, repaid, status });
@@ -97,4 +100,31 @@ test("one installment is just the expense", () => {
 test("local date string uses local, not UTC, fields", () => {
   assert.equal(localDateString(new Date(2026, 0, 5, 0, 30)), "2026-01-05");
   assert.equal(localDateString(new Date(2026, 11, 31, 23, 59)), "2026-12-31");
+});
+
+test("split in half: they get half, you absorb an odd cent", () => {
+  assert.equal(evenShare(80, 1), 40);
+  assert.equal(evenShare(25.55, 1), 12.77); // you pay 12.78
+});
+
+test("split evenly between several people never overshoots the total", () => {
+  assert.equal(evenShare(100, 2), 33.33); // you pay 33.34
+  for (const [total, people] of [[100, 2], [99.99, 3], [0.05, 4], [736.4, 5]]) {
+    const each = Math.round(evenShare(total, people) * 100);
+    assert.ok(each * people <= Math.round(total * 100), `${total} / ${people + 1}`);
+    assert.ok(Math.round(total * 100) - each * (people + 1) < people + 1, "leftover is under a cent each");
+  }
+});
+
+test("percent shares round to the cent", () => {
+  assert.equal(shareFromPercent(80, 50), 40);
+  assert.equal(shareFromPercent(25.55, 50), 12.78);
+  assert.equal(shareFromPercent(100, 33.3), 33.3);
+  assert.equal(shareFromPercent(100, ""), 0);
+});
+
+test("percent of a share, for display", () => {
+  assert.equal(percentOf(80, 40), 50);
+  assert.equal(percentOf(90, 30), 33.3);
+  assert.equal(percentOf(0, 10), 0);
 });
